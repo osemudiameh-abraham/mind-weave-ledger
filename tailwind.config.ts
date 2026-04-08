@@ -14,7 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        sans: ['"Google Sans"', '"Google Sans Text"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -79,7 +79,7 @@ export default {
         },
         breathe: {
           "0%, 100%": { transform: "scale(1)", opacity: "0.8" },
-          "50%": { transform: "scale(1.05)", opacity: "1" },
+          "50%": { transform: "scale(1.08)", opacity: "1" },
         },
         "orb-morph": {
           "0%": { borderRadius: "60% 40% 30% 70% / 60% 30% 70% 40%" },
@@ -94,7 +94,7 @@ export default {
         },
         "pulse-ring": {
           "0%": { transform: "scale(1)", opacity: "0.6" },
-          "50%": { transform: "scale(1.15)", opacity: "0.3" },
+          "50%": { transform: "scale(1.2)", opacity: "0.2" },
           "100%": { transform: "scale(1)", opacity: "0.6" },
         },
         "float-up": {
