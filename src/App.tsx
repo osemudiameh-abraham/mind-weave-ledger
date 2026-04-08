@@ -23,11 +23,11 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/splash" element={<Splash />} />
+          <Route path="/" element={<Splash />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/" element={<Home />} />
+          <Route path="/home" element={<Home />} />
           <Route path="/live" element={<Live />} />
           <Route path="/library" element={<Library />} />
           <Route path="/memory" element={<Memory />} />

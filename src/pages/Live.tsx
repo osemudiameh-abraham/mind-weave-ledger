@@ -38,7 +38,7 @@ const Live = () => {
       <div className="w-full flex items-center justify-between">
         <motion.button
           whileTap={{ scale: 0.9 }}
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/home")}
           className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
         >
           <X size={18} className="text-white/80" />
@@ -139,7 +139,7 @@ const Live = () => {
 
         <motion.button
           whileTap={{ scale: 0.9 }}
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/home")}
           className="w-16 h-16 rounded-full bg-destructive flex items-center justify-center shadow-lg"
         >
           <Square

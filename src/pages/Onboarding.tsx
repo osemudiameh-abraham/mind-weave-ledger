@@ -29,7 +29,7 @@ const Onboarding = () => {
 
   const next = () => {
     if (step < steps.length - 1) setStep(step + 1);
-    else navigate("/");
+    else navigate("/home");
   };
 
   return (
