@@ -52,10 +52,10 @@ const Onboarding = () => {
           {step === 0 && (
             <motion.div key="welcome" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="w-full max-w-sm">
               <div className="flex justify-center mb-6">
-                <svg width="48" height="48" viewBox="0 0 28 28" fill="none">
-                  <path d="M14 0C14 7.732 7.732 14 0 14c7.732 0 14 6.268 14 14 0-7.732 6.268-14 14-14-7.732 0-14-6.268-14-14z" fill="url(#obsparkle)"/>
+                <svg width="58" height="48" viewBox="0 0 36 28" fill="none">
+                  <path d="M18 0C18 7.732 9.936 14 0 14c9.936 0 18 6.268 18 14 0-7.732 8.064-14 18-14-9.936 0-18-6.268-18-14z" fill="url(#obsparkle)"/>
                   <defs>
-                    <linearGradient id="obsparkle" x1="0" y1="0" x2="28" y2="28">
+                    <linearGradient id="obsparkle" x1="0" y1="0" x2="36" y2="28">
                       <stop stopColor="hsl(217, 91%, 60%)" />
                       <stop offset="0.5" stopColor="hsl(262, 83%, 58%)" />
                       <stop offset="1" stopColor="hsl(330, 81%, 60%)" />
@@ -179,10 +179,10 @@ const Onboarding = () => {
           {step === 4 && (
             <motion.div key="ready" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="w-full max-w-sm text-center">
               <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ duration: 2.5, repeat: Infinity }}>
-                <svg width="56" height="56" viewBox="0 0 28 28" fill="none" className="mx-auto mb-6">
-                  <path d="M14 0C14 7.732 7.732 14 0 14c7.732 0 14 6.268 14 14 0-7.732 6.268-14 14-14-7.732 0-14-6.268-14-14z" fill="url(#readysparkle)"/>
+                <svg width="68" height="56" viewBox="0 0 36 28" fill="none" className="mx-auto mb-6">
+                  <path d="M18 0C18 7.732 9.936 14 0 14c9.936 0 18 6.268 18 14 0-7.732 8.064-14 18-14-9.936 0-18-6.268-18-14z" fill="url(#readysparkle)"/>
                   <defs>
-                    <linearGradient id="readysparkle" x1="0" y1="0" x2="28" y2="28">
+                    <linearGradient id="readysparkle" x1="0" y1="0" x2="36" y2="28">
                       <stop stopColor="hsl(217, 91%, 60%)" />
                       <stop offset="0.5" stopColor="hsl(262, 83%, 58%)" />
                       <stop offset="1" stopColor="hsl(330, 81%, 60%)" />

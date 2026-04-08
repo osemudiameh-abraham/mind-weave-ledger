@@ -32,10 +32,10 @@ const SignUp = () => {
         className="w-full max-w-sm"
       >
         <div className="flex flex-col items-center mb-8">
-          <svg width="40" height="40" viewBox="0 0 28 28" fill="none" className="mb-3">
-            <path d="M14 0C14 7.732 7.732 14 0 14c7.732 0 14 6.268 14 14 0-7.732 6.268-14 14-14-7.732 0-14-6.268-14-14z" fill="url(#signupsparkle)"/>
+          <svg width="48" height="40" viewBox="0 0 36 28" fill="none" className="mb-3">
+            <path d="M18 0C18 7.732 9.936 14 0 14c9.936 0 18 6.268 18 14 0-7.732 8.064-14 18-14-9.936 0-18-6.268-18-14z" fill="url(#signupsparkle)"/>
             <defs>
-              <linearGradient id="signupsparkle" x1="0" y1="0" x2="28" y2="28">
+              <linearGradient id="signupsparkle" x1="0" y1="0" x2="36" y2="28">
                 <stop stopColor="hsl(217, 91%, 60%)" />
                 <stop offset="0.5" stopColor="hsl(262, 83%, 58%)" />
                 <stop offset="1" stopColor="hsl(330, 81%, 60%)" />
