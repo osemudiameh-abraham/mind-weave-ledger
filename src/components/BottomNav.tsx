@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import LiveButton from "./LiveButton";
 
 const tabs = [
-  { icon: Home, label: "Home", path: "/" },
+  { icon: Home, label: "Home", path: "/home" },
   { icon: Library, label: "Library", path: "/library" },
   { icon: null, label: "Live", path: "/live" },
   { icon: Compass, label: "Explore", path: "/memory" },
