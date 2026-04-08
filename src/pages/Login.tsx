@@ -28,7 +28,7 @@ const Login = () => {
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <svg width="48" height="40" viewBox="0 0 36 28" fill="none" className="mb-3">
-            <path d="M18 0C18 7.732 9.936 14 0 14c9.936 0 18 6.268 18 14 0-7.732 8.064-14 18-14-9.936 0-18-6.268-18-14z" fill="url(#loginsparkle)"/>
+            <path d="M18 0C18 6 13 9.5 8.5 11.5C4.5 13 1.5 13.5 0 14C1.5 14.5 4.5 15 8.5 16.5C13 18.5 18 22 18 28C18 22 23 18.5 27.5 16.5C31.5 15 34.5 14.5 36 14C34.5 13.5 31.5 13 27.5 11.5C23 9.5 18 6 18 0Z" fill="url(#loginsparkle)"/>
             <defs>
               <linearGradient id="loginsparkle" x1="0" y1="0" x2="36" y2="28">
                 <stop stopColor="hsl(217, 91%, 60%)" />
