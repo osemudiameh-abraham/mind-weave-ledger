@@ -98,7 +98,7 @@ const Home = () => {
                           </linearGradient>
                         </defs>
                       </svg>
-                      <span className="text-xs font-medium text-muted-foreground">Seven Mynd</span>
+                      <span className="text-xs font-medium text-muted-foreground">Seven</span>
                     </div>
                   )}
                   {msg.text}

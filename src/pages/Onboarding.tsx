@@ -64,12 +64,12 @@ const Onboarding = () => {
                 </svg>
               </div>
               <h1 className="text-2xl font-medium text-foreground text-center mb-2">Meet your cognitive layer</h1>
-              <p className="text-sm text-muted-foreground text-center mb-8">Seven Mynd learns how you think, decide, and grow — and turns that into structured intelligence.</p>
+              <p className="text-sm text-muted-foreground text-center mb-8">Seven learns how you think, decide, and grow — and turns that into structured intelligence.</p>
 
               <div className="flex flex-col gap-3 mb-8">
                 {[
                   { icon: <Brain size={20} />, title: "Decision Tracking", desc: "Every commitment you make, logged and followed up" },
-                  { icon: <Search size={20} />, title: "Pattern Detection", desc: "Seven Mynd finds what's working and what's not" },
+                  { icon: <Search size={20} />, title: "Pattern Detection", desc: "Seven finds what's working and what's not" },
                   { icon: <Scale size={20} />, title: "Governed Memory", desc: "Facts vs assumptions — always clear, always auditable" },
                 ].map((f, i) => (
                   <div key={i} className="flex gap-4 items-start p-4 rounded-2xl bg-card border border-border">
@@ -91,7 +91,7 @@ const Onboarding = () => {
           {/* STEP 1 — Identity */}
           {step === 1 && (
             <motion.div key="identity" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="w-full max-w-sm">
-              <h2 className="text-xl font-medium text-foreground mb-2">What should Seven Mynd call you?</h2>
+              <h2 className="text-xl font-medium text-foreground mb-2">What should Seven call you?</h2>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your first name"
                 className="w-full bg-card rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-primary transition-colors mb-8" />
 
@@ -143,7 +143,7 @@ const Onboarding = () => {
               <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
                 <Bell size={24} className="text-primary" />
               </div>
-              <h2 className="text-xl font-medium text-foreground mb-2 text-center">When should Seven Mynd check in?</h2>
+              <h2 className="text-xl font-medium text-foreground mb-2 text-center">When should Seven check in?</h2>
 
               <div className="flex gap-2 justify-center mb-6 mt-6">
                 {["Morning", "Midday", "Evening"].map((t) => (
@@ -191,10 +191,10 @@ const Onboarding = () => {
                 </svg>
               </motion.div>
               <h1 className="text-2xl font-medium text-foreground mb-2">{name || "Friend"}, your cognitive layer is ready.</h1>
-              <p className="text-sm text-muted-foreground mb-8">Seven Mynd will learn from every interaction. The longer you use it, the smarter it gets — about you.</p>
+              <p className="text-sm text-muted-foreground mb-8">Seven will learn from every interaction. The longer you use it, the smarter it gets — about you.</p>
 
               <motion.button whileTap={{ scale: 0.97 }} onClick={next} className="w-full py-3 rounded-full bg-primary text-primary-foreground font-medium text-sm">
-                Enter Seven Mynd
+                Enter Seven
               </motion.button>
             </motion.div>
           )}

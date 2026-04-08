@@ -41,7 +41,7 @@ const Profile = () => {
       title: "General",
       items: [
         { label: "Appearance", icon: Palette, subtitle: "System" },
-        { label: "About Seven Mynd", icon: Info, subtitle: "v1.0.0" },
+        { label: "About Seven", icon: Info, subtitle: "v1.0.0" },
       ],
     },
   ];
