@@ -12,30 +12,37 @@ const Splash = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
-      {/* Animated gradient background */}
-      <div className="absolute inset-0">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full gradient-bg opacity-10 blur-[120px] animate-breathe" />
-      </div>
+      {/* Soft gradient glow */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full gradient-bg opacity-[0.07] blur-[100px]" />
 
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
+        initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
         className="flex flex-col items-center gap-4 z-10"
       >
+        {/* Gemini-style sparkle */}
         <motion.div
-          animate={{ scale: [1, 1.05, 1] }}
+          animate={{ scale: [1, 1.06, 1] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-          className="w-20 h-20 rounded-3xl gradient-bg flex items-center justify-center shadow-lg"
         >
-          <span className="text-primary-foreground text-2xl font-bold">7M</span>
+          <svg width="56" height="56" viewBox="0 0 28 28" fill="none">
+            <path d="M14 0C14 7.732 7.732 14 0 14c7.732 0 14 6.268 14 14 0-7.732 6.268-14 14-14-7.732 0-14-6.268-14-14z" fill="url(#splashsparkle)"/>
+            <defs>
+              <linearGradient id="splashsparkle" x1="0" y1="0" x2="28" y2="28">
+                <stop stopColor="hsl(217, 91%, 60%)" />
+                <stop offset="0.5" stopColor="hsl(262, 83%, 58%)" />
+                <stop offset="1" stopColor="hsl(330, 81%, 60%)" />
+              </linearGradient>
+            </defs>
+          </svg>
         </motion.div>
 
         <motion.h1
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.6 }}
-          className="text-2xl font-semibold text-foreground tracking-tight"
+          transition={{ delay: 0.3, duration: 0.5 }}
+          className="text-xl font-medium text-foreground tracking-tight"
         >
           Seven Mynd
         </motion.h1>
@@ -43,7 +50,7 @@ const Splash = () => {
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.8, duration: 0.6 }}
+          transition={{ delay: 0.6, duration: 0.5 }}
           className="text-sm text-muted-foreground"
         >
           Your mind. Structured.

@@ -6,7 +6,7 @@ const tabs = [
   { icon: Home, label: "Home", path: "/" },
   { icon: Library, label: "Library", path: "/library" },
   { icon: null, label: "Live", path: "/live" },
-  { icon: Compass, label: "Memory", path: "/memory" },
+  { icon: Compass, label: "Explore", path: "/memory" },
   { icon: User, label: "Profile", path: "/profile" },
 ];
 
@@ -16,13 +16,14 @@ const BottomNav = () => {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
-      <div className="glass-surface border-t border-border">
-        <div className="flex items-end justify-around px-2 pb-2 pt-1 max-w-lg mx-auto">
+      <div className="bg-card/95 backdrop-blur-xl border-t border-border">
+        <div className="flex items-end justify-around px-2 pb-1 pt-1 max-w-lg mx-auto">
           {tabs.map((tab) => {
             if (tab.label === "Live") {
               return (
-                <div key="live" className="relative -mt-5">
+                <div key="live" className="relative -mt-4 flex flex-col items-center">
                   <LiveButton onClick={() => navigate("/live")} />
+                  <span className="text-[10px] font-medium text-muted-foreground mt-0.5">Live</span>
                 </div>
               );
             }
@@ -36,7 +37,7 @@ const BottomNav = () => {
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
-                <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
+                <Icon size={22} strokeWidth={active ? 2.2 : 1.6} />
                 <span className="text-[10px] font-medium">{tab.label}</span>
               </button>
             );

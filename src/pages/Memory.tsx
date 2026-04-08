@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle, XCircle, Clock, TrendingUp, Eye, Shield, ChevronRight } from "lucide-react";
+import { CheckCircle, XCircle, Clock, TrendingUp, Eye, Shield } from "lucide-react";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 
@@ -41,9 +41,9 @@ const Memory = () => {
 
   const statusBadge = (s: "kept" | "missed" | "progress") => {
     const map = {
-      kept: { icon: <CheckCircle size={14} />, label: "Kept", cls: "text-green-600 bg-green-50" },
-      missed: { icon: <XCircle size={14} />, label: "Missed", cls: "text-destructive bg-red-50" },
-      progress: { icon: <Clock size={14} />, label: "In Progress", cls: "text-yellow-600 bg-yellow-50" },
+      kept: { icon: <CheckCircle size={14} />, label: "Kept", cls: "text-green-700 bg-green-100" },
+      missed: { icon: <XCircle size={14} />, label: "Missed", cls: "text-red-700 bg-red-100" },
+      progress: { icon: <Clock size={14} />, label: "In Progress", cls: "text-yellow-700 bg-yellow-100" },
     };
     const m = map[s];
     return (
@@ -56,14 +56,18 @@ const Memory = () => {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
-        <h1 className="text-xl font-semibold text-foreground mt-2 mb-4">Memory Intelligence</h1>
+      <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
+        <h1 className="text-lg font-medium text-foreground mt-3 mb-4">Memory Intelligence</h1>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-secondary rounded-2xl p-1 mb-6">
+        <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar">
           {tabs.map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all ${tab === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>
+              className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+                tab === t 
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card text-foreground border-border"
+              }`}>
               {t}
             </button>
           ))}
@@ -93,17 +97,17 @@ const Memory = () => {
               <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                 className="p-4 rounded-2xl bg-card border border-border">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl gradient-bg flex items-center justify-center shrink-0">
-                    <TrendingUp size={16} className="text-primary-foreground" />
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <TrendingUp size={16} className="text-primary" />
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-foreground">{p.text}</p>
                     <div className="flex items-center gap-3 mt-2">
                       <span className="text-xs text-muted-foreground">{p.confidence}% confidence</span>
-                      <span className="text-xs text-muted-foreground">{p.evidence} evidence points</span>
+                      <span className="text-xs text-muted-foreground">{p.evidence} evidence</span>
                     </div>
                     <div className="w-full bg-secondary rounded-full h-1.5 mt-2">
-                      <div className="gradient-bg h-1.5 rounded-full transition-all" style={{ width: `${p.confidence}%` }} />
+                      <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${p.confidence}%` }} />
                     </div>
                   </div>
                 </div>
@@ -115,7 +119,6 @@ const Memory = () => {
         {/* Identity */}
         {tab === "Identity" && (
           <div className="flex flex-col gap-4">
-            {/* Metrics */}
             <div className="grid grid-cols-3 gap-3">
               {identityData.metrics.map((m, i) => (
                 <motion.div key={i} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
@@ -123,9 +126,8 @@ const Memory = () => {
                   <div className="relative w-14 h-14 mx-auto mb-2">
                     <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
                       <circle cx="28" cy="28" r="24" fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
-                      <circle cx="28" cy="28" r="24" fill="none" stroke="url(#grad)" strokeWidth="4" strokeLinecap="round"
+                      <circle cx="28" cy="28" r="24" fill="none" stroke="hsl(var(--primary))" strokeWidth="4" strokeLinecap="round"
                         strokeDasharray={`${(m.value / 100) * 150.8} 150.8`} />
-                      <defs><linearGradient id="grad"><stop offset="0%" stopColor="hsl(var(--gradient-start))" /><stop offset="100%" stopColor="hsl(var(--gradient-end))" /></linearGradient></defs>
                     </svg>
                     <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-foreground">{m.value}%</span>
                   </div>
@@ -134,16 +136,15 @@ const Memory = () => {
               ))}
             </div>
 
-            {/* Strengths & Blind Spots */}
             {[
-              { title: "Strengths", items: identityData.strengths, color: "text-green-600" },
-              { title: "Blind Spots", items: identityData.blindSpots, color: "text-yellow-600" },
+              { title: "Strengths", items: identityData.strengths, color: "text-green-700 bg-green-100" },
+              { title: "Blind Spots", items: identityData.blindSpots, color: "text-yellow-700 bg-yellow-100" },
             ].map((section) => (
               <div key={section.title} className="p-4 rounded-2xl bg-card border border-border">
-                <h3 className="text-sm font-semibold text-foreground mb-3">{section.title}</h3>
+                <h3 className="text-sm font-medium text-foreground mb-3">{section.title}</h3>
                 <div className="flex flex-wrap gap-2">
                   {section.items.map((item) => (
-                    <span key={item} className={`px-3 py-1 rounded-full bg-secondary text-xs font-medium ${section.color}`}>{item}</span>
+                    <span key={item} className={`px-3 py-1 rounded-full text-xs font-medium ${section.color}`}>{item}</span>
                   ))}
                 </div>
               </div>
@@ -157,14 +158,14 @@ const Memory = () => {
             {facts.map((f, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                 className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border">
-                <div className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
                   {f.confidence === "Confirmed" ? <Shield size={14} className="text-primary" /> : <Eye size={14} className="text-muted-foreground" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{f.label}</p>
                   <p className="text-[10px] text-muted-foreground">{f.source} · {f.date}</p>
                 </div>
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${f.confidence === "Confirmed" ? "bg-green-50 text-green-600" : "bg-yellow-50 text-yellow-600"}`}>
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${f.confidence === "Confirmed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
                   {f.confidence}
                 </span>
               </motion.div>

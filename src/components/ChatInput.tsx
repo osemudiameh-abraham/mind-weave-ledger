@@ -1,4 +1,4 @@
-import { Mic, Send } from "lucide-react";
+import { Mic, Send, Plus, Camera } from "lucide-react";
 import { useState } from "react";
 import { motion } from "framer-motion";
 
@@ -7,7 +7,7 @@ interface ChatInputProps {
   placeholder?: string;
 }
 
-const ChatInput = ({ onSend, placeholder = "Ask Seven Mynd anything…" }: ChatInputProps) => {
+const ChatInput = ({ onSend, placeholder = "Message Seven Mynd" }: ChatInputProps) => {
   const [value, setValue] = useState("");
 
   const handleSend = () => {
@@ -18,9 +18,12 @@ const ChatInput = ({ onSend, placeholder = "Ask Seven Mynd anything…" }: ChatI
   };
 
   return (
-    <div className="fixed bottom-20 left-0 right-0 px-4 z-40">
+    <div className="fixed bottom-[68px] left-0 right-0 px-3 z-40 pb-2">
       <div className="max-w-lg mx-auto">
-        <div className="bg-card rounded-full shadow-lg border border-border flex items-center px-4 py-2 gap-2">
+        <div className="bg-card rounded-[28px] shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] border border-border flex items-center px-3 py-2.5 gap-2">
+          <button className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
+            <Plus size={18} className="text-foreground" />
+          </button>
           <input
             type="text"
             value={value}
@@ -33,17 +36,19 @@ const ChatInput = ({ onSend, placeholder = "Ask Seven Mynd anything…" }: ChatI
             <motion.button
               whileTap={{ scale: 0.85 }}
               onClick={handleSend}
-              className="w-8 h-8 rounded-full gradient-bg flex items-center justify-center"
+              className="w-8 h-8 rounded-full gradient-bg flex items-center justify-center shrink-0"
             >
               <Send size={16} className="text-primary-foreground" />
             </motion.button>
           ) : (
-            <motion.button
-              whileTap={{ scale: 0.85 }}
-              className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center"
-            >
-              <Mic size={16} className="text-muted-foreground" />
-            </motion.button>
+            <div className="flex items-center gap-1">
+              <button className="w-8 h-8 rounded-full flex items-center justify-center">
+                <Camera size={18} className="text-muted-foreground" />
+              </button>
+              <button className="w-8 h-8 rounded-full flex items-center justify-center">
+                <Mic size={18} className="text-muted-foreground" />
+              </button>
+            </div>
           )}
         </div>
       </div>

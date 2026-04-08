@@ -50,19 +50,23 @@ const Library = () => {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
+      <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
         {/* Search */}
-        <div className="relative mt-2 mb-4">
+        <div className="relative mt-3 mb-4">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations"
-            className="w-full bg-secondary rounded-2xl pl-11 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none" />
+            className="w-full bg-card rounded-full pl-11 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-primary transition-colors" />
         </div>
 
         {/* Filters */}
-        <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar">
+        <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar">
           {filters.map((f) => (
             <button key={f} onClick={() => setActiveFilter(f)}
-              className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${activeFilter === f ? "gradient-bg text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>
+              className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+                activeFilter === f 
+                  ? "bg-primary text-primary-foreground border-primary" 
+                  : "bg-card text-foreground border-border"
+              }`}>
               {f}
             </button>
           ))}
@@ -71,15 +75,15 @@ const Library = () => {
         {/* Pinned */}
         {pinned.length > 0 && (
           <>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Pinned</h3>
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Pinned</h3>
             {pinned.map((item) => (
               <ChatCard key={item.id} item={item} typeIcon={typeIcon} />
             ))}
           </>
         )}
 
-        {/* Today */}
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 mt-4">Recent</h3>
+        {/* Recent */}
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 mt-4">Recent</h3>
         {unpinned.map((item) => (
           <ChatCard key={item.id} item={item} typeIcon={typeIcon} />
         ))}
@@ -90,7 +94,7 @@ const Library = () => {
 };
 
 const ChatCard = ({ item, typeIcon }: { item: ChatItem; typeIcon: (t: ChatItem["type"]) => React.ReactNode }) => (
-  <motion.div whileTap={{ scale: 0.98 }} className="flex items-start gap-3 p-3 rounded-2xl hover:bg-surface-hover transition-colors mb-1 cursor-pointer">
+  <motion.div whileTap={{ scale: 0.98 }} className="flex items-start gap-3 p-3 rounded-2xl hover:bg-card transition-colors mb-1 cursor-pointer">
     <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5">
       {typeIcon(item.type)}
     </div>

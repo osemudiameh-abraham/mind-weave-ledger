@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronRight, User, Brain, Bell, Shield, Database, Palette, Info, LogOut } from "lucide-react";
+import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TopNav from "@/components/TopNav";
@@ -49,24 +49,24 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
+      <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
         {/* Profile card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-4 p-4 rounded-2xl bg-card border border-border mt-2 mb-6">
-          <div className="w-14 h-14 rounded-full gradient-bg flex items-center justify-center text-primary-foreground font-semibold text-lg">
+          className="flex items-center gap-4 p-4 rounded-2xl bg-card border border-border mt-3 mb-6">
+          <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-lg">
             U
           </div>
           <div className="flex-1">
-            <h2 className="text-base font-semibold text-foreground">User</h2>
+            <h2 className="text-base font-medium text-foreground">User</h2>
             <p className="text-xs text-muted-foreground">user@example.com</p>
           </div>
           <button className="text-xs text-primary font-medium">Edit</button>
         </motion.div>
 
         {/* Sections */}
-        {sections.map((section, si) => (
+        {sections.map((section) => (
           <div key={section.title} className="mb-6">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">{section.title}</h3>
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-1">{section.title}</h3>
             <div className="rounded-2xl bg-card border border-border overflow-hidden">
               {section.items.map((item, i) => (
                 <div key={item.label}
@@ -78,7 +78,7 @@ const Profile = () => {
                   </div>
                   {(item as any).toggle ? (
                     <button onClick={() => (item as any).onChange(!(item as any).value)}
-                      className={`w-10 h-6 rounded-full transition-colors flex items-center px-0.5 ${(item as any).value ? "gradient-bg" : "bg-border"}`}>
+                      className={`w-10 h-6 rounded-full transition-colors flex items-center px-0.5 ${(item as any).value ? "bg-primary" : "bg-border"}`}>
                       <div className={`w-5 h-5 rounded-full bg-card shadow-sm transition-transform ${(item as any).value ? "translate-x-4" : "translate-x-0"}`} />
                     </button>
                   ) : (
@@ -92,7 +92,7 @@ const Profile = () => {
 
         {/* Sign out */}
         <motion.button whileTap={{ scale: 0.97 }} onClick={() => navigate("/login")}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-destructive text-sm font-medium bg-card border border-border">
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-full text-destructive text-sm font-medium bg-card border border-border">
           <LogOut size={16} />
           Sign out
         </motion.button>
