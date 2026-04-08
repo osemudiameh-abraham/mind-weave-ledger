@@ -7,7 +7,7 @@ interface ChatInputProps {
   placeholder?: string;
 }
 
-const ChatInput = ({ onSend, placeholder = "Message Seven Mynd" }: ChatInputProps) => {
+const ChatInput = ({ onSend, placeholder = "Message Seven" }: ChatInputProps) => {
   const [value, setValue] = useState("");
 
   const handleSend = () => {

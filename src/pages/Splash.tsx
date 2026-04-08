@@ -44,7 +44,7 @@ const Splash = () => {
           transition={{ delay: 0.3, duration: 0.5 }}
           className="text-xl font-medium text-foreground tracking-tight"
         >
-          Seven Mynd
+          Seven
         </motion.h1>
 
         <motion.p

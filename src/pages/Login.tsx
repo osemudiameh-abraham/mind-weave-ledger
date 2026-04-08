@@ -37,7 +37,7 @@ const Login = () => {
               </linearGradient>
             </defs>
           </svg>
-          <h1 className="text-xl font-medium text-foreground">Seven Mynd</h1>
+          <h1 className="text-xl font-medium text-foreground">Seven</h1>
           <p className="text-sm text-muted-foreground mt-1">Your mind. Structured.</p>
         </div>
 

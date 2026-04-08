@@ -24,7 +24,7 @@ const TopNav = ({ onMenuClick }: TopNavProps) => {
               </linearGradient>
             </defs>
           </svg>
-          <span className="font-medium text-foreground text-base tracking-tight">Seven Mynd</span>
+          <span className="font-medium text-foreground text-base tracking-tight">Seven</span>
         </div>
 
         <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-medium">
