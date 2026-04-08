@@ -53,7 +53,7 @@ const Onboarding = () => {
             <motion.div key="welcome" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="w-full max-w-sm">
               <div className="flex justify-center mb-6">
                 <svg width="58" height="48" viewBox="0 0 36 28" fill="none">
-                  <path d="M18 0C18 7.732 9.936 14 0 14c9.936 0 18 6.268 18 14 0-7.732 8.064-14 18-14-9.936 0-18-6.268-18-14z" fill="url(#obsparkle)"/>
+                  <path d="M18 0C18 6 13 9.5 8.5 11.5C4.5 13 1.5 13.5 0 14C1.5 14.5 4.5 15 8.5 16.5C13 18.5 18 22 18 28C18 22 23 18.5 27.5 16.5C31.5 15 34.5 14.5 36 14C34.5 13.5 31.5 13 27.5 11.5C23 9.5 18 6 18 0Z" fill="url(#obsparkle)"/>
                   <defs>
                     <linearGradient id="obsparkle" x1="0" y1="0" x2="36" y2="28">
                       <stop stopColor="hsl(217, 91%, 60%)" />
@@ -180,7 +180,7 @@ const Onboarding = () => {
             <motion.div key="ready" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="w-full max-w-sm text-center">
               <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ duration: 2.5, repeat: Infinity }}>
                 <svg width="68" height="56" viewBox="0 0 36 28" fill="none" className="mx-auto mb-6">
-                  <path d="M18 0C18 7.732 9.936 14 0 14c9.936 0 18 6.268 18 14 0-7.732 8.064-14 18-14-9.936 0-18-6.268-18-14z" fill="url(#readysparkle)"/>
+                  <path d="M18 0C18 6 13 9.5 8.5 11.5C4.5 13 1.5 13.5 0 14C1.5 14.5 4.5 15 8.5 16.5C13 18.5 18 22 18 28C18 22 23 18.5 27.5 16.5C31.5 15 34.5 14.5 36 14C34.5 13.5 31.5 13 27.5 11.5C23 9.5 18 6 18 0Z" fill="url(#readysparkle)"/>
                   <defs>
                     <linearGradient id="readysparkle" x1="0" y1="0" x2="36" y2="28">
                       <stop stopColor="hsl(217, 91%, 60%)" />
