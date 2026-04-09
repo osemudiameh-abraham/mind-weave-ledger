@@ -1,4 +1,4 @@
-import { Menu, Settings } from "lucide-react";
+import { Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import SevenLogo from "./SevenLogo";
 

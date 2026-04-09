@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ThumbsUp, ThumbsDown, Minus, Clock } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Minus } from "lucide-react";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 
