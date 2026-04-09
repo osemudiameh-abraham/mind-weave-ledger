@@ -12,10 +12,12 @@ interface Message {
 }
 
 const suggestions = [
-  { text: "What patterns did I show this week?", icon: "✦" },
-  { text: "Review my last decision", icon: "📋" },
-  { text: "How am I tracking?", icon: "📊" },
-  { text: "Spot a habit", icon: "🔍" },
+  "What patterns did I show this week?",
+  "Review my last decision",
+  "How am I tracking?",
+  "Spot a habit",
+  "Show me my vault",
+  "Summarize my week",
 ];
 
 const Home = () => {
@@ -44,55 +46,50 @@ const Home = () => {
     <div className="min-h-screen bg-background">
       <TopNav />
 
-      <div className="pt-14 pb-36 px-4 max-w-lg mx-auto">
+      <div className="pt-14 pb-32 px-4 max-w-lg mx-auto">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-[65vh] pt-16">
+          <div className="flex flex-col items-center justify-center min-h-[70vh]">
+            {/* Greeting area — Gemini style */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4 }}
+              className="mb-6"
             >
-              <SevenLogo size={44} className="mb-8" />
+              <SevenLogo size={40} />
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15, duration: 0.5 }}
-              className="text-[26px] font-normal text-foreground tracking-[-0.02em] text-center mb-2"
+              transition={{ delay: 0.1, duration: 0.5 }}
+              className="text-[28px] font-normal text-foreground tracking-[-0.02em] text-center leading-tight"
             >
-              {greeting()}, User
+              {greeting()},
+              <br />
+              <span className="text-muted-foreground">where should we start?</span>
             </motion.h1>
 
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="text-[15px] text-muted-foreground mb-10"
-            >
-              Where should we start?
-            </motion.p>
-
+            {/* Horizontal scrollable chips — Gemini style */}
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.4 }}
-              className="grid grid-cols-2 gap-3 w-full max-w-sm"
+              transition={{ delay: 0.3, duration: 0.4 }}
+              className="flex gap-2 overflow-x-auto no-scrollbar mt-8 -mx-4 px-4 w-screen max-w-lg"
             >
               {suggestions.map((s, i) => (
                 <button
                   key={i}
-                  onClick={() => handleSend(s.text)}
-                  className="bg-card border border-border rounded-2xl p-4 text-left hover:bg-surface-hover transition-colors group"
+                  onClick={() => handleSend(s)}
+                  className="flex-shrink-0 px-4 py-2.5 rounded-full border border-border bg-card text-[13px] text-foreground font-medium hover:bg-muted transition-colors whitespace-nowrap"
                 >
-                  <span className="text-lg mb-2 block">{s.icon}</span>
-                  <span className="text-[13px] text-foreground/80 leading-snug">{s.text}</span>
+                  {s}
                 </button>
               ))}
             </motion.div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3 mt-6">
+          <div className="flex flex-col gap-4 mt-6">
             {messages.map((msg, i) => (
               <motion.div
                 key={i}
@@ -104,14 +101,14 @@ const Home = () => {
                 <div
                   className={`max-w-[85%] px-4 py-3 text-[14px] leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-[20px] rounded-br-md"
-                      : "bg-card border border-border text-foreground rounded-[20px] rounded-bl-md"
+                      ? "bg-primary/10 text-foreground rounded-[20px] rounded-br-md"
+                      : "text-foreground"
                   }`}
                 >
                   {msg.role === "ai" && (
                     <div className="flex items-center gap-2 mb-2">
                       <SevenLogo size={16} />
-                      <span className="text-[11px] font-medium text-muted-foreground">Seven</span>
+                      <span className="text-[12px] font-medium text-muted-foreground">Seven</span>
                     </div>
                   )}
                   {msg.text}
