@@ -17,7 +17,7 @@ const BottomNav = () => {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
       <div className="bg-card/95 backdrop-blur-xl border-t border-border">
-        <div className="flex items-end justify-around px-2 pb-1 pt-1 max-w-lg mx-auto">
+        <div className="flex items-end justify-around px-2 pb-1.5 pt-1.5 max-w-lg mx-auto">
           {tabs.map((tab) => {
             if (tab.label === "Live") {
               return (
@@ -33,12 +33,12 @@ const BottomNav = () => {
               <button
                 key={tab.path}
                 onClick={() => navigate(tab.path)}
-                className={`flex flex-col items-center gap-0.5 py-2 px-3 transition-colors ${
+                className={`flex flex-col items-center gap-0.5 py-2 px-3 transition-all duration-200 ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
-                <Icon size={22} strokeWidth={active ? 2.2 : 1.6} />
-                <span className="text-[10px] font-medium">{tab.label}</span>
+                <Icon size={22} strokeWidth={active ? 2.2 : 1.5} />
+                <span className={`text-[10px] ${active ? "font-semibold" : "font-medium"}`}>{tab.label}</span>
               </button>
             );
           })}
