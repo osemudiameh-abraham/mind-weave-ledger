@@ -11,6 +11,7 @@ import {
   Smartphone,
   Trash2,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 
@@ -47,6 +48,8 @@ const sections = [
 ];
 
 const Settings = () => {
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
@@ -74,14 +77,18 @@ const Settings = () => {
               {section.items.map((item, i) => (
                 <button
                   key={i}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left"
                 >
                   <item.icon
                     size={20}
                     className={item.danger ? "text-destructive" : "text-muted-foreground"}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className={`text-[14px] font-medium ${item.danger ? "text-destructive" : "text-foreground"}`}>
+                    <p
+                      className={`text-[14px] font-medium ${
+                        item.danger ? "text-destructive" : "text-foreground"
+                      }`}
+                    >
                       {item.label}
                     </p>
                     <p className="text-[12px] text-muted-foreground truncate">{item.desc}</p>
@@ -91,7 +98,7 @@ const Settings = () => {
                       <div className="absolute right-0.5 top-0.5 w-5 h-5 bg-primary-foreground rounded-full" />
                     </div>
                   ) : item.connected ? (
-                    <span className="text-[11px] text-green-600 font-medium">Connected</span>
+                    <span className="text-[11px] text-primary font-medium">Connected</span>
                   ) : (
                     <ChevronRight size={16} className="text-muted-foreground" />
                   )}
@@ -105,6 +112,7 @@ const Settings = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
+          onClick={() => navigate("/")}
           className="w-full flex items-center justify-center gap-2 py-3 text-destructive text-[14px] font-medium mt-4"
         >
           <LogOut size={18} />

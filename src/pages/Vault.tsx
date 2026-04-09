@@ -38,10 +38,9 @@ const Vault = () => {
           className="mb-5"
         >
           <h1 className="text-[22px] font-medium text-foreground tracking-tight">Memory Vault</h1>
-          <p className="text-[13px] text-muted-foreground mt-1">Everything Seven knows about you</p>
+          <p className="text-[14px] text-muted-foreground mt-1">Everything Seven knows about you</p>
         </motion.div>
 
-        {/* Category filters */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar mb-5 -mx-4 px-4">
           {categories.map((cat) => (
             <button
@@ -50,7 +49,7 @@ const Vault = () => {
               className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
                 active === cat.key
                   ? "bg-primary text-primary-foreground"
-                  : "bg-card border border-border text-foreground hover:bg-surface-hover"
+                  : "bg-card border border-border text-foreground"
               }`}
             >
               {cat.icon && <cat.icon size={14} />}
@@ -59,7 +58,6 @@ const Vault = () => {
           ))}
         </div>
 
-        {/* Fact cards */}
         <div className="flex flex-col gap-3">
           {filtered.map((fact, i) => (
             <motion.div

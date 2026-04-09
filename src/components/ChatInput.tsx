@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Mic, Send, Plus, Image } from "lucide-react";
+import { Mic, Send, Plus, Camera } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ChatInputProps {
@@ -26,10 +26,10 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   };
 
   return (
-    <div className="fixed bottom-[60px] left-0 right-0 z-40 px-4 pb-2">
+    <div className="fixed bottom-[56px] left-0 right-0 z-40 px-3 pb-2 bg-background">
       <div className="max-w-lg mx-auto">
-        <div className="bg-card rounded-[28px] border border-border shadow-sm flex items-end gap-1 px-3 py-2">
-          <button className="p-2 text-muted-foreground hover:text-foreground transition-colors shrink-0 mb-0.5">
+        <div className="bg-card rounded-[28px] border border-border shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] flex items-end gap-1 px-2 py-1.5">
+          <button className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5">
             <Plus size={20} />
           </button>
 
@@ -45,7 +45,7 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             }}
             placeholder="Talk to Seven"
             rows={1}
-            className="flex-1 bg-transparent text-foreground text-[14px] placeholder:text-muted-foreground outline-none resize-none py-1.5 leading-relaxed"
+            className="flex-1 bg-transparent text-foreground text-[15px] placeholder:text-muted-foreground outline-none resize-none py-2 leading-relaxed min-h-[24px]"
           />
 
           {hasText ? (
@@ -53,18 +53,18 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               onClick={handleSend}
-              className="p-2 bg-primary text-primary-foreground rounded-full shrink-0 mb-0.5 transition-transform active:scale-90"
+              className="w-9 h-9 bg-primary text-primary-foreground rounded-full flex items-center justify-center shrink-0 mb-0.5"
             >
               <Send size={16} />
             </motion.button>
           ) : (
             <>
-              <button className="p-2 text-muted-foreground hover:text-foreground transition-colors shrink-0 mb-0.5">
-                <Image size={20} />
+              <button className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5">
+                <Camera size={20} />
               </button>
               <button
                 onClick={onLive}
-                className="p-2 text-muted-foreground hover:text-foreground transition-colors shrink-0 mb-0.5"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5"
               >
                 <Mic size={20} />
               </button>
