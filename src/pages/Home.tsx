@@ -1,10 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
-import SuggestionChips from "@/components/SuggestionChips";
-import CheckInSheet from "@/components/CheckInSheet";
+import SevenLogo from "@/components/SevenLogo";
 
 interface Message {
   role: "user" | "ai";
@@ -12,21 +12,24 @@ interface Message {
 }
 
 const suggestions = [
-  "What patterns did I show this week?",
-  "Review my last decision",
-  "How am I doing?",
-  "Spot a habit",
+  { text: "What patterns did I show this week?", icon: "✦" },
+  { text: "Review my last decision", icon: "📋" },
+  { text: "How am I tracking?", icon: "📊" },
+  { text: "Spot a habit", icon: "🔍" },
 ];
 
 const Home = () => {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [showCheckIn, setShowCheckIn] = useState(false);
+  const navigate = useNavigate();
 
   const handleSend = (text: string) => {
     setMessages((prev) => [
       ...prev,
       { role: "user", text },
-      { role: "ai", text: `I'll remember that. Based on your patterns, here's what I notice about "${text.slice(0, 40)}..." — this connects to a recurring theme in your decisions.` },
+      {
+        role: "ai",
+        text: `Based on your patterns, here's what I notice about "${text.slice(0, 40)}…" — this connects to a recurring theme in your decisions. I'll keep tracking this.`,
+      },
     ]);
   };
 
@@ -43,62 +46,71 @@ const Home = () => {
 
       <div className="pt-14 pb-36 px-4 max-w-lg mx-auto">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-start justify-center min-h-[60vh] pt-20">
+          <div className="flex flex-col items-center justify-center min-h-[65vh] pt-16">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+            >
+              <SevenLogo size={44} className="mb-8" />
+            </motion.div>
+
             <motion.h1
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1, duration: 0.5, ease: "easeOut" }}
-              className="text-[28px] font-normal leading-tight tracking-[-0.02em]"
+              transition={{ delay: 0.15, duration: 0.5 }}
+              className="text-[26px] font-normal text-foreground tracking-[-0.02em] text-center mb-2"
             >
-              <span className="gradient-text">{greeting()},</span>
+              {greeting()}, User
             </motion.h1>
-            <motion.h1
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
-              className="text-[28px] font-normal leading-tight gradient-text mb-8 tracking-[-0.02em]"
-            >
-              User
-            </motion.h1>
+
             <motion.p
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              transition={{ delay: 0.35 }}
-              className="text-[14px] text-muted-foreground mb-8"
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="text-[15px] text-muted-foreground mb-10"
             >
-              How can I help you today?
+              Where should we start?
             </motion.p>
-            <SuggestionChips suggestions={suggestions} onSelect={handleSend} />
+
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.4 }}
+              className="grid grid-cols-2 gap-3 w-full max-w-sm"
+            >
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSend(s.text)}
+                  className="bg-card border border-border rounded-2xl p-4 text-left hover:bg-surface-hover transition-colors group"
+                >
+                  <span className="text-lg mb-2 block">{s.icon}</span>
+                  <span className="text-[13px] text-foreground/80 leading-snug">{s.text}</span>
+                </button>
+              ))}
+            </motion.div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 mt-6">
+          <div className="flex flex-col gap-3 mt-6">
             {messages.map((msg, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 12 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
+                transition={{ duration: 0.25 }}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
                   className={`max-w-[85%] px-4 py-3 text-[14px] leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-[20px] rounded-br-md shadow-sm"
+                      ? "bg-primary text-primary-foreground rounded-[20px] rounded-br-md"
                       : "bg-card border border-border text-foreground rounded-[20px] rounded-bl-md"
                   }`}
                 >
                   {msg.role === "ai" && (
                     <div className="flex items-center gap-2 mb-2">
-                      <svg width="18" height="14" viewBox="0 0 36 28" fill="none">
-                        <path d="M18 0C18 6 13 9.5 8.5 11.5C4.5 13 1.5 13.5 0 14C1.5 14.5 4.5 15 8.5 16.5C13 18.5 18 22 18 28C18 22 23 18.5 27.5 16.5C31.5 15 34.5 14.5 36 14C34.5 13.5 31.5 13 27.5 11.5C23 9.5 18 6 18 0Z" fill="url(#msgsparkle)"/>
-                        <defs>
-                          <linearGradient id="msgsparkle" x1="0" y1="0" x2="36" y2="28">
-                            <stop stopColor="hsl(217, 91%, 60%)" />
-                            <stop offset="0.5" stopColor="hsl(262, 83%, 58%)" />
-                            <stop offset="1" stopColor="hsl(330, 81%, 60%)" />
-                          </linearGradient>
-                        </defs>
-                      </svg>
+                      <SevenLogo size={16} />
                       <span className="text-[11px] font-medium text-muted-foreground">Seven</span>
                     </div>
                   )}
@@ -110,15 +122,8 @@ const Home = () => {
         )}
       </div>
 
-      <ChatInput onSend={handleSend} />
+      <ChatInput onSend={handleSend} onLive={() => navigate("/live")} />
       <BottomNav />
-
-      <CheckInSheet
-        open={showCheckIn}
-        onClose={() => setShowCheckIn(false)}
-        userName="User"
-        decision="wake up at 6am"
-      />
     </div>
   );
 };

@@ -1,13 +1,12 @@
-import { Home, Library, Compass, User } from "lucide-react";
+import { Home, ClipboardCheck, Archive, ShieldCheck, BarChart3 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
-import LiveButton from "./LiveButton";
 
 const tabs = [
-  { icon: Home, label: "Home", path: "/home" },
-  { icon: Library, label: "Library", path: "/library" },
-  { icon: null, label: "Live", path: "/live" },
-  { icon: Compass, label: "Explore", path: "/memory" },
-  { icon: User, label: "Profile", path: "/profile" },
+  { icon: Home, label: "Home", path: "/" },
+  { icon: ClipboardCheck, label: "Reviews", path: "/reviews" },
+  { icon: Archive, label: "Vault", path: "/vault" },
+  { icon: ShieldCheck, label: "Trace", path: "/trace" },
+  { icon: BarChart3, label: "Digest", path: "/digest" },
 ];
 
 const BottomNav = () => {
@@ -16,29 +15,27 @@ const BottomNav = () => {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
-      <div className="bg-card/95 backdrop-blur-xl border-t border-border">
-        <div className="flex items-end justify-around px-2 pb-1.5 pt-1.5 max-w-lg mx-auto">
+      <div className="bg-card border-t border-border">
+        <div className="flex items-center justify-around px-1 pb-1 pt-1 max-w-lg mx-auto">
           {tabs.map((tab) => {
-            if (tab.label === "Live") {
-              return (
-                <div key="live" className="relative -mt-4 flex flex-col items-center">
-                  <LiveButton onClick={() => navigate("/live")} />
-                  <span className="text-[10px] font-medium text-muted-foreground mt-0.5">Live</span>
-                </div>
-              );
-            }
-            const Icon = tab.icon!;
+            const Icon = tab.icon;
             const active = location.pathname === tab.path;
             return (
               <button
                 key={tab.path}
                 onClick={() => navigate(tab.path)}
-                className={`flex flex-col items-center gap-0.5 py-2 px-3 transition-all duration-200 ${
-                  active ? "text-primary" : "text-muted-foreground"
-                }`}
+                className="flex flex-col items-center gap-0.5 py-2 px-3 min-w-[56px] transition-colors"
               >
-                <Icon size={22} strokeWidth={active ? 2.2 : 1.5} />
-                <span className={`text-[10px] ${active ? "font-semibold" : "font-medium"}`}>{tab.label}</span>
+                <div className={`p-1 rounded-full transition-colors ${active ? "bg-primary/10" : ""}`}>
+                  <Icon
+                    size={20}
+                    strokeWidth={active ? 2.2 : 1.6}
+                    className={active ? "text-primary" : "text-muted-foreground"}
+                  />
+                </div>
+                <span className={`text-[10px] leading-tight ${active ? "font-semibold text-primary" : "font-medium text-muted-foreground"}`}>
+                  {tab.label}
+                </span>
               </button>
             );
           })}

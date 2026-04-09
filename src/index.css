@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,25 +6,25 @@
 
 @layer base {
   :root {
-    --background: 216 28% 95%;
-    --foreground: 220 15% 15%;
+    --background: 210 33% 96%;
+    --foreground: 220 20% 16%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 15% 15%;
+    --card-foreground: 220 20% 16%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 15%;
+    --popover-foreground: 220 20% 16%;
 
-    --primary: 217 91% 60%;
+    --primary: 220 82% 46%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 216 20% 93%;
+    --secondary: 210 25% 93%;
     --secondary-foreground: 220 15% 25%;
 
-    --muted: 216 20% 93%;
+    --muted: 210 20% 93%;
     --muted-foreground: 220 8% 46%;
 
-    --accent: 217 91% 60%;
+    --accent: 220 82% 46%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
@@ -32,67 +32,63 @@
 
     --border: 220 13% 90%;
     --input: 220 13% 90%;
-    --ring: 217 91% 60%;
+    --ring: 220 82% 46%;
 
     --radius: 1.5rem;
-
-    --gradient-start: 217 91% 60%;
-    --gradient-mid: 262 83% 58%;
-    --gradient-end: 330 81% 60%;
 
     --surface: 0 0% 100%;
     --surface-hover: 220 14% 96%;
 
-    --sidebar-background: 216 28% 95%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 90%;
-    --sidebar-ring: 217 91% 60%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 15% 30%;
+    --sidebar-primary: 220 82% 46%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 25% 95%;
+    --sidebar-accent-foreground: 220 15% 20%;
+    --sidebar-border: 220 13% 92%;
+    --sidebar-ring: 220 82% 46%;
   }
 
   .dark {
-    --background: 0 0% 7%;
+    --background: 220 15% 8%;
     --foreground: 0 0% 93%;
 
-    --card: 0 0% 11%;
+    --card: 220 15% 12%;
     --card-foreground: 0 0% 93%;
 
-    --popover: 0 0% 11%;
+    --popover: 220 15% 12%;
     --popover-foreground: 0 0% 93%;
 
-    --primary: 217 91% 65%;
+    --primary: 220 82% 60%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 15%;
+    --secondary: 220 10% 18%;
     --secondary-foreground: 0 0% 85%;
 
-    --muted: 0 0% 15%;
+    --muted: 220 10% 18%;
     --muted-foreground: 0 0% 55%;
 
-    --accent: 217 91% 65%;
+    --accent: 220 82% 60%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 217 91% 65%;
+    --border: 220 10% 20%;
+    --input: 220 10% 20%;
+    --ring: 220 82% 60%;
 
-    --surface: 0 0% 11%;
-    --surface-hover: 0 0% 15%;
+    --surface: 220 15% 12%;
+    --surface-hover: 220 10% 18%;
 
-    --sidebar-background: 0 0% 7%;
+    --sidebar-background: 220 15% 8%;
     --sidebar-foreground: 0 0% 93%;
-    --sidebar-primary: 217 91% 65%;
+    --sidebar-primary: 220 82% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent: 220 10% 18%;
     --sidebar-accent-foreground: 0 0% 93%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 217 91% 65%;
+    --sidebar-border: 220 10% 20%;
+    --sidebar-ring: 220 82% 60%;
   }
 }
 
@@ -103,43 +99,11 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Google Sans', 'Google Sans Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Google Sans', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 }
 
 @layer utilities {
-  .gradient-text {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(
-      135deg,
-      hsl(var(--gradient-start)),
-      hsl(var(--gradient-mid)),
-      hsl(var(--gradient-end))
-    );
-  }
-
-  .gradient-bg {
-    background-image: linear-gradient(
-      135deg,
-      hsl(var(--gradient-start)),
-      hsl(var(--gradient-mid)),
-      hsl(var(--gradient-end))
-    );
-  }
-
-  .gradient-border {
-    background-image: conic-gradient(
-      hsl(var(--gradient-start)),
-      hsl(var(--gradient-mid)),
-      hsl(var(--gradient-end)),
-      hsl(var(--gradient-start))
-    );
-  }
-
-  .glass-surface {
-    @apply bg-card/90 backdrop-blur-xl;
-  }
-
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -149,36 +113,12 @@
   }
 }
 
-@keyframes breathe {
-  0%, 100% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.08); opacity: 1; }
+@keyframes waveform {
+  0%, 100% { height: 4px; }
+  50% { height: 24px; }
 }
 
-@keyframes orb-morph {
-  0% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
-  25% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
-  50% { border-radius: 50% 60% 30% 60% / 60% 40% 60% 40%; }
-  75% { border-radius: 60% 40% 60% 30% / 40% 50% 60% 50%; }
-  100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
-}
-
-@keyframes gradient-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes pulse-ring {
-  0% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.2); opacity: 0.2; }
-  100% { transform: scale(1); opacity: 0.6; }
-}
-
-@keyframes float-up {
-  0% { opacity: 0; transform: translateY(20px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@keyframes waveform-fast {
+  0%, 100% { height: 6px; }
+  50% { height: 32px; }
 }
