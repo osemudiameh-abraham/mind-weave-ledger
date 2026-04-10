@@ -37,7 +37,7 @@ const Home = () => {
     ]);
   };
 
-  const userName = "User"; // TODO: replace with actual user name from auth
+  const userName = localStorage.getItem("seven_user_name") || "there";
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -94,7 +94,7 @@ const Home = () => {
             >
               {greeting()}, {userName}
               <br />
-              <span className="text-muted-foreground">where should we start?</span>
+              <span className="bg-gradient-to-r from-primary via-[hsl(250,80%,65%)] to-[hsl(280,75%,60%)] bg-clip-text text-transparent">where should we start?</span>
             </motion.h1>
 
             <motion.p
