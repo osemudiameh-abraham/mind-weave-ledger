@@ -15,7 +15,7 @@ const Splash = () => {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
+    <main className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
       {/* Animated radial rings */}
       {[0, 1, 2].map((i) => (
         <motion.div
@@ -115,7 +115,7 @@ const Splash = () => {
         ) : null}
       </AnimatePresence>
 
-    </div>
+    </main>
   );
 };
 
