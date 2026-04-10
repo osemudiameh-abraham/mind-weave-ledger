@@ -15,6 +15,9 @@ import Settings from "./pages/Settings";
 import Subscription from "./pages/Subscription";
 import Live from "./pages/Live";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import Library from "./pages/Library";
+import Memory from "./pages/Memory";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,6 +41,9 @@ const App = () => (
           <Route path="/subscription" element={<Subscription />} />
           <Route path="/live" element={<Live />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/library" element={<Library />} />
+          <Route path="/memory" element={<Memory />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
