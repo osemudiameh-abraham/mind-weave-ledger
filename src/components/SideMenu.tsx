@@ -79,6 +79,33 @@ const SideMenu = ({
   const [editName, setEditName] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [connectedDevices, setConnectedDevices] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("seven_connected_devices") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [connectingDevice, setConnectingDevice] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("seven_connected_devices", JSON.stringify(connectedDevices));
+  }, [connectedDevices]);
+
+  const handleDeviceToggle = (label: string) => {
+    if (connectedDevices.includes(label)) {
+      setConnectedDevices((prev) => prev.filter((d) => d !== label));
+      toast(`${label} disconnected`);
+    } else {
+      setConnectingDevice(label);
+      // Simulate pairing
+      setTimeout(() => {
+        setConnectedDevices((prev) => [...prev, label]);
+        setConnectingDevice(null);
+        toast.success(`${label} connected successfully`);
+      }, 1500);
+    }
+  };
 
   const handleNav = (path: string) => {
     navigate(path);
