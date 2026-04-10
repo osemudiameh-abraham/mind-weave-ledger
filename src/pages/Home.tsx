@@ -36,12 +36,24 @@ const Home = () => {
     ]);
   };
 
+  const userName = "User"; // TODO: replace with actual user name from auth
+
   const greeting = () => {
     const h = new Date().getHours();
     if (h < 12) return "Good morning";
     if (h < 17) return "Good afternoon";
-    return "Good evening";
+    if (h < 21) return "Good evening";
+    return "Good night";
   };
+
+  const tips = [
+    "Tap the live button to start speaking with Seven — it's the fastest way to get to know each other.",
+    "Try asking me about your patterns — I'll track what matters to you over time.",
+    "Use the suggestion chips below to explore what Seven can do for you.",
+    "Check your Vault anytime to revisit saved insights and decisions.",
+  ];
+
+  const tipOfTheDay = tips[new Date().getDate() % tips.length];
 
   return (
     <div className="min-h-screen bg-background">
@@ -65,10 +77,19 @@ const Home = () => {
               transition={{ delay: 0.1, duration: 0.5 }}
               className="text-[28px] font-normal text-foreground tracking-[-0.02em] text-center leading-tight"
             >
-              {greeting()},
+              {greeting()}, {userName}
               <br />
               <span className="text-muted-foreground">where should we start?</span>
             </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
+              className="text-[13px] text-muted-foreground text-center mt-4 max-w-[280px] leading-relaxed"
+            >
+              {tipOfTheDay}
+            </motion.p>
 
             <motion.div
               initial={{ opacity: 0, y: 16 }}
