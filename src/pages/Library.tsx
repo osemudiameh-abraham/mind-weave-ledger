@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Search, Pin, Mic, MessageSquare } from "lucide-react";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 
 interface ChatItem {
   id: string;
@@ -48,17 +47,14 @@ const Library = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
-        {/* Search */}
         <div className="relative mt-3 mb-4">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations"
             className="w-full bg-card rounded-full pl-11 pr-4 h-11 text-[14px] text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all duration-200" />
         </div>
 
-        {/* Filters */}
         <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar pb-0.5">
           {filters.map((f) => (
             <button key={f} onClick={() => setActiveFilter(f)}
@@ -72,7 +68,6 @@ const Library = () => {
           ))}
         </div>
 
-        {/* Pinned */}
         {pinned.length > 0 && (
           <>
             <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest mb-3 px-1">Pinned</h3>
@@ -82,14 +77,12 @@ const Library = () => {
           </>
         )}
 
-        {/* Recent */}
         <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest mb-3 mt-5 px-1">Recent</h3>
         {unpinned.map((item, i) => (
           <ChatCard key={item.id} item={item} typeIcon={typeIcon} index={i} />
         ))}
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 

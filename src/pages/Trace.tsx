@@ -1,8 +1,7 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 
 const traces = [
   {
@@ -43,8 +42,7 @@ const Trace = () => {
   const [expanded, setExpanded] = useState<number | null>(null);
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -127,8 +125,7 @@ const Trace = () => {
           })}
         </div>
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 

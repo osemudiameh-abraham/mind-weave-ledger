@@ -12,8 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 
 const sections = [
   {
@@ -51,8 +50,7 @@ const Settings = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -119,8 +117,7 @@ const Settings = () => {
           Sign out
         </motion.button>
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 
