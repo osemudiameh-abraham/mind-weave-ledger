@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { toast } from "sonner";
 import {
   ClipboardCheck,
   Archive,
@@ -78,6 +79,33 @@ const SideMenu = ({
   const [editName, setEditName] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [connectedDevices, setConnectedDevices] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("seven_connected_devices") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [connectingDevice, setConnectingDevice] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("seven_connected_devices", JSON.stringify(connectedDevices));
+  }, [connectedDevices]);
+
+  const handleDeviceToggle = (label: string) => {
+    if (connectedDevices.includes(label)) {
+      setConnectedDevices((prev) => prev.filter((d) => d !== label));
+      toast(`${label} disconnected`);
+    } else {
+      setConnectingDevice(label);
+      // Simulate pairing
+      setTimeout(() => {
+        setConnectedDevices((prev) => [...prev, label]);
+        setConnectingDevice(null);
+        toast.success(`${label} connected successfully`);
+      }, 1500);
+    }
+  };
 
   const handleNav = (path: string) => {
     navigate(path);
@@ -287,20 +315,31 @@ const SideMenu = ({
             <p className="text-[12px] text-muted-foreground px-2 mb-3 leading-relaxed">
               Let Seven see, hear, and learn through your devices — in real time.
             </p>
-            {deviceTypes.map((device) => (
-              <button
-                key={device.label}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors"
-              >
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <device.icon size={16} className="text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-foreground">{device.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{device.desc}</p>
-                </div>
-              </button>
-            ))}
+            {deviceTypes.map((device) => {
+              const isConnected = connectedDevices.includes(device.label);
+              const isConnecting = connectingDevice === device.label;
+              return (
+                <button
+                  key={device.label}
+                  onClick={() => handleDeviceToggle(device.label)}
+                  disabled={isConnecting}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors disabled:opacity-60"
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isConnected ? "bg-primary/20" : "bg-primary/10"}`}>
+                    <device.icon size={16} className={isConnected ? "text-primary" : "text-muted-foreground"} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-foreground">{device.label}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {isConnecting ? "Connecting…" : isConnected ? "Connected" : device.desc}
+                    </p>
+                  </div>
+                  {isConnected && (
+                    <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
