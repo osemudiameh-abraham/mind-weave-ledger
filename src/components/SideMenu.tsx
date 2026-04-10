@@ -30,6 +30,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import SevenLogo from "./SevenLogo";
+import DevicePairingSheet from "./DevicePairingSheet";
 import type { Section } from "@/hooks/use-sections";
 
 interface SideMenuProps {
@@ -79,32 +80,37 @@ const SideMenu = ({
   const [editName, setEditName] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
-  const [connectedDevices, setConnectedDevices] = useState<string[]>(() => {
+  const [connectedDevices, setConnectedDevices] = useState<Record<string, string>>(() => {
     try {
-      return JSON.parse(localStorage.getItem("seven_connected_devices") || "[]");
+      return JSON.parse(localStorage.getItem("seven_connected_devices_v2") || "{}");
     } catch {
-      return [];
+      return {};
     }
   });
-  const [connectingDevice, setConnectingDevice] = useState<string | null>(null);
+  const [pairingCategory, setPairingCategory] = useState<string | null>(null);
+  const [pairingOpen, setPairingOpen] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem("seven_connected_devices", JSON.stringify(connectedDevices));
+    localStorage.setItem("seven_connected_devices_v2", JSON.stringify(connectedDevices));
   }, [connectedDevices]);
 
-  const handleDeviceToggle = (label: string) => {
-    if (connectedDevices.includes(label)) {
-      setConnectedDevices((prev) => prev.filter((d) => d !== label));
-      toast(`${label} disconnected`);
-    } else {
-      setConnectingDevice(label);
-      // Simulate pairing
-      setTimeout(() => {
-        setConnectedDevices((prev) => [...prev, label]);
-        setConnectingDevice(null);
-        toast.success(`${label} connected successfully`);
-      }, 1500);
-    }
+
+  const handleDeviceClick = (category: string) => {
+    setPairingCategory(category);
+    setPairingOpen(true);
+  };
+
+  const handleDeviceConnected = (deviceId: string, deviceName: string, category: string) => {
+    setConnectedDevices((prev) => ({ ...prev, [deviceId]: deviceName }));
+  };
+
+  const handleDeviceDisconnected = (deviceId: string) => {
+    setConnectedDevices((prev) => {
+      const next = { ...prev };
+      delete next[deviceId];
+      return next;
+    });
+    toast(`Device disconnected`);
   };
 
   const handleNav = (path: string) => {
@@ -129,6 +135,7 @@ const SideMenu = ({
   const hiddenSections = sections.filter((s) => s.hidden);
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-[280px] p-0 flex flex-col">
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border">
@@ -217,7 +224,6 @@ const SideMenu = ({
                     </button>
                   )}
 
-                  {/* Context menu */}
                   {menuOpenId === section.id && (
                     <div className="absolute right-2 top-full z-10 bg-card border border-border rounded-xl shadow-lg py-1 min-w-[140px]">
                       <button
@@ -244,7 +250,6 @@ const SideMenu = ({
               );
             })}
 
-            {/* Show hidden toggle */}
             {hiddenSections.length > 0 && (
               <button
                 onClick={() => setShowHidden(!showHidden)}
@@ -316,25 +321,25 @@ const SideMenu = ({
               Let Seven see, hear, and learn through your devices — in real time.
             </p>
             {deviceTypes.map((device) => {
-              const isConnected = connectedDevices.includes(device.label);
-              const isConnecting = connectingDevice === device.label;
+              const connectedName = Object.values(connectedDevices).find((name) =>
+                name.toLowerCase().includes(device.label.toLowerCase().split(" ")[0])
+              );
               return (
                 <button
                   key={device.label}
-                  onClick={() => handleDeviceToggle(device.label)}
-                  disabled={isConnecting}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors disabled:opacity-60"
+                  onClick={() => handleDeviceClick(device.label)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors"
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isConnected ? "bg-primary/20" : "bg-primary/10"}`}>
-                    <device.icon size={16} className={isConnected ? "text-primary" : "text-muted-foreground"} />
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${connectedName ? "bg-primary/20" : "bg-primary/10"}`}>
+                    <device.icon size={16} className={connectedName ? "text-primary" : "text-muted-foreground"} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-foreground">{device.label}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {isConnecting ? "Connecting…" : isConnected ? "Connected" : device.desc}
+                      {connectedName || device.desc}
                     </p>
                   </div>
-                  {isConnected && (
+                  {connectedName && (
                     <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                   )}
                 </button>
@@ -362,6 +367,16 @@ const SideMenu = ({
         </div>
       </SheetContent>
     </Sheet>
+
+    <DevicePairingSheet
+      open={pairingOpen}
+      onOpenChange={setPairingOpen}
+      deviceCategory={pairingCategory}
+      connectedDevices={Object.keys(connectedDevices)}
+      onDeviceConnected={handleDeviceConnected}
+      onDeviceDisconnected={handleDeviceDisconnected}
+    />
+    </>
   );
 };
 
