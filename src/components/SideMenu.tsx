@@ -94,15 +94,6 @@ const SideMenu = ({
     localStorage.setItem("seven_connected_devices_v2", JSON.stringify(connectedDevices));
   }, [connectedDevices]);
 
-  const getConnectedDeviceForCategory = (category: string): string | undefined => {
-    // Look through connected device names and match to category
-    return Object.values(connectedDevices).find(() => false); // simplified - tracked by category below
-  };
-
-  const connectedByCategory = Object.entries(connectedDevices).reduce<Record<string, string>>((acc, [id, name]) => {
-    // We need to find the category - store it in a map
-    return acc;
-  }, {});
 
   const handleDeviceClick = (category: string) => {
     setPairingCategory(category);
