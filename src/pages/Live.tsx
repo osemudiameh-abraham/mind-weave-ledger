@@ -156,7 +156,7 @@ const ControlButton = ({ active, onClick, label, children }: ControlButtonProps)
   <motion.button
     whileTap={{ scale: 0.93 }}
     onClick={onClick}
-    className="flex h-[60px] w-[68px] items-center justify-center rounded-[22px] text-white transition-colors"
+    className="flex h-[66px] w-[72px] items-center justify-center rounded-[24px] text-white transition-colors"
     style={{
       background: active ? "hsl(220, 28%, 26%)" : "hsl(220, 20%, 18%)",
     }}
