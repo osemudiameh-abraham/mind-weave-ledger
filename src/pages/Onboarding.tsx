@@ -319,8 +319,146 @@ const Onboarding = () => {
             </motion.div>
           )}
 
-          {/* Step 4: Safe Word & Voice */}
+
+          {/* Step 4: Device Access Consent */}
           {step === 4 && (
+            <motion.div
+              key="consent"
+              custom={1}
+              variants={slide}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+              className="w-full max-w-sm mx-auto"
+            >
+              <h2 className="text-[24px] font-normal text-foreground tracking-[-0.03em] leading-tight">
+                Let Seven learn
+                <br />
+                from your world
+              </h2>
+              <p className="text-[14px] text-muted-foreground mt-2 mb-6 leading-relaxed">
+                Optionally allow Seven to access your devices and apps to deeply understand and assist you.
+              </p>
+
+              {/* Main consent toggle */}
+              <div className="p-4 rounded-2xl border border-border bg-card mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <Brain size={18} className="text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-medium text-foreground">Enable deep learning</p>
+                      <p className="text-[12px] text-muted-foreground mt-0.5">Access device data & connected apps</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setDeviceConsent(!deviceConsent)}
+                    className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${
+                      deviceConsent ? "bg-primary" : "bg-input"
+                    }`}
+                  >
+                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-background shadow-lg transition-transform ${
+                      deviceConsent ? "translate-x-5" : "translate-x-0.5"
+                    }`} />
+                  </button>
+                </div>
+
+                {deviceConsent && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="pt-3 border-t border-border mt-3"
+                  >
+                    <p className="text-[12px] text-muted-foreground mb-3">Seven will be able to access:</p>
+                    <div className="space-y-2">
+                      {[
+                        { icon: MessageSquare, label: "Messages & WhatsApp" },
+                        { icon: Mail, label: "Gmail & email accounts" },
+                        { icon: Smartphone, label: "Call logs & device history" },
+                        { icon: Activity, label: "Health & activity data" },
+                      ].map((item, i) => (
+                        <div key={i} className="flex items-center gap-2.5 py-1.5">
+                          <item.icon size={14} className="text-primary shrink-0" />
+                          <span className="text-[13px] text-foreground">{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p className="text-[12px] text-muted-foreground mt-4 mb-2 font-medium">Seven can act on your behalf:</p>
+                    <div className="space-y-1.5">
+                      {[
+                        "Write & send emails",
+                        "Respond to messages",
+                        "Build your CV from your history",
+                        "Review & accept opportunities",
+                        "Make calls when instructed",
+                      ].map((action, i) => (
+                        <div key={i} className="flex items-center gap-2 py-1">
+                          <Check size={12} className="text-primary shrink-0" />
+                          <span className="text-[12px] text-muted-foreground">{action}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Emergency consent */}
+              <div className="p-4 rounded-2xl border border-border bg-card mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                      <AlertTriangle size={18} className="text-destructive" />
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-medium text-foreground">Emergency response</p>
+                      <p className="text-[12px] text-muted-foreground mt-0.5">Contact help if you're in danger</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setEmergencyConsent(!emergencyConsent)}
+                    className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${
+                      emergencyConsent ? "bg-primary" : "bg-input"
+                    }`}
+                  >
+                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-background shadow-lg transition-transform ${
+                      emergencyConsent ? "translate-x-5" : "translate-x-0.5"
+                    }`} />
+                  </button>
+                </div>
+                {emergencyConsent && (
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border leading-relaxed"
+                  >
+                    If Seven is ≥95% certain you need help, it will contact local authorities or medical services, clearly identifying itself and providing a unique verification ID.
+                  </motion.p>
+                )}
+              </div>
+
+              {/* Security assurance */}
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/50 mb-8">
+                <Lock size={14} className="text-primary shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  All data is end-to-end encrypted, stored locally on your devices, and never shared with anyone. Your information belongs only to you.
+                </p>
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={next}
+                className="w-full h-[50px] rounded-full bg-primary text-primary-foreground font-medium text-[15px]"
+              >
+                Continue
+              </motion.button>
+            </motion.div>
+          )}
+
+          {/* Step 5: Safe Word & Voice */}
+          {step === 5 && (
             <motion.div
               key="safeword"
               custom={1}
