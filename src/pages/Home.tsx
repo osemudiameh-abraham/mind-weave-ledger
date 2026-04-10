@@ -27,6 +27,15 @@ const suggestions = [
 const Home = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const navigate = useNavigate();
+  const { reminders, unseen, dueNow, addReminder, markSeen, markAllSeen, dismissReminder } = useReminders();
+
+  // Toast for due reminders
+  useEffect(() => {
+    dueNow.forEach((r) => {
+      toast(r.title, { description: r.description || "Reminder from Seven", duration: 6000 });
+      markSeen(r.id);
+    });
+  }, [dueNow, markSeen]);
 
   const handleSend = (text: string) => {
     setMessages((prev) => [
