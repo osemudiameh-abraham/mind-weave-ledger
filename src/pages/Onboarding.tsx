@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Mic, ShieldCheck, Lock, EyeOff, BanIcon } from "lucide-react";
 import SevenLogo from "@/components/SevenLogo";
 
 const Onboarding = () => {
@@ -10,7 +10,10 @@ const Onboarding = () => {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [goals, setGoals] = useState<string[]>([]);
-  const totalSteps = 4;
+  const [safeWord, setSafeWord] = useState("");
+  const [voiceVerify, setVoiceVerify] = useState(false);
+  const [voiceRecorded, setVoiceRecorded] = useState(false);
+  const totalSteps = 6;
 
   const toggle = (arr: string[], val: string, setter: (v: string[]) => void) =>
     setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
@@ -18,6 +21,9 @@ const Onboarding = () => {
   const next = () => {
     if (step === 1 && name.trim()) {
       localStorage.setItem("seven_user_name", name.trim());
+    }
+    if (step === 4 && safeWord.trim()) {
+      localStorage.setItem("seven_safe_word", safeWord.trim());
     }
     if (step < totalSteps) setStep(step + 1);
     else navigate("/home");
@@ -38,6 +44,13 @@ const Onboarding = () => {
     { emoji: "🔍", label: "Understand my patterns" },
     { emoji: "⚡", label: "Build better habits" },
     { emoji: "🧠", label: "Think more clearly" },
+  ];
+
+  const privacyPromises = [
+    { icon: ShieldCheck, text: "Seven will never sell your information" },
+    { icon: Lock, text: "Seven guarantees your privacy" },
+    { icon: BanIcon, text: "Seven does not run ads — and never will" },
+    { icon: EyeOff, text: "Your privacy is fully yours" },
   ];
 
   const slide = {
@@ -304,8 +317,161 @@ const Onboarding = () => {
             </motion.div>
           )}
 
-          {/* Step 4: Ready */}
+          {/* Step 4: Safe Word & Voice */}
           {step === 4 && (
+            <motion.div
+              key="safeword"
+              custom={1}
+              variants={slide}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+              className="w-full max-w-sm mx-auto"
+            >
+              <h2 className="text-[24px] font-normal text-foreground tracking-[-0.03em] leading-tight">
+                Set your wake word
+              </h2>
+              <p className="text-[14px] text-muted-foreground mt-2 mb-6 leading-relaxed">
+                Say this word to activate Seven hands-free on any connected device. The default is <span className="font-semibold text-foreground">"Hey Seven"</span>.
+              </p>
+
+              <input
+                type="text"
+                value={safeWord}
+                onChange={(e) => setSafeWord(e.target.value)}
+                placeholder="Choose a custom wake word (optional)"
+                className="w-full bg-card rounded-2xl px-5 h-[52px] text-[16px] text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+              />
+              <p className="text-[12px] text-muted-foreground mt-2 px-1">
+                Leave blank to use the default: "Hey Seven"
+              </p>
+
+              {/* Voice verification */}
+              <div className="mt-8 p-4 rounded-2xl border border-border bg-card">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-[14px] font-medium text-foreground">Voice verification</p>
+                    <p className="text-[12px] text-muted-foreground mt-0.5">
+                      Only activate for your voice
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setVoiceVerify(!voiceVerify)}
+                    className={`w-11 h-6 rounded-full transition-colors relative ${
+                      voiceVerify ? "bg-primary" : "bg-input"
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-5 h-5 rounded-full bg-background shadow-lg transition-transform ${
+                        voiceVerify ? "translate-x-5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {voiceVerify && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="pt-3 border-t border-border"
+                  >
+                    <button
+                      onClick={() => setVoiceRecorded(true)}
+                      className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl transition-colors ${
+                        voiceRecorded
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted text-foreground hover:bg-muted/80"
+                      }`}
+                    >
+                      {voiceRecorded ? (
+                        <>
+                          <Check size={16} />
+                          <span className="text-[13px] font-medium">Voice recorded</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic size={16} />
+                          <span className="text-[13px] font-medium">Tap to record your voice</span>
+                        </>
+                      )}
+                    </button>
+                    <p className="text-[11px] text-muted-foreground text-center mt-2">
+                      Say "Hey Seven" clearly so we can learn your voice
+                    </p>
+                  </motion.div>
+                )}
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={next}
+                className="w-full h-[50px] rounded-full bg-primary text-primary-foreground font-medium text-[15px] mt-8"
+              >
+                Continue
+              </motion.button>
+            </motion.div>
+          )}
+
+          {/* Step 5: Privacy */}
+          {step === 5 && (
+            <motion.div
+              key="privacy"
+              custom={1}
+              variants={slide}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+              className="w-full max-w-sm mx-auto"
+            >
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1, duration: 0.5 }}
+                className="flex justify-center mb-6"
+              >
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                  <ShieldCheck size={28} className="text-primary" />
+                </div>
+              </motion.div>
+
+              <h2 className="text-[24px] font-normal text-foreground tracking-[-0.03em] leading-tight text-center">
+                Your trust matters
+              </h2>
+              <p className="text-[14px] text-muted-foreground text-center mt-2 mb-8 leading-relaxed">
+                Seven is built with privacy at its core.
+              </p>
+
+              <div className="space-y-3 mb-10">
+                {privacyPromises.map((promise, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 + i * 0.08, duration: 0.4 }}
+                    className="flex items-center gap-3.5 p-4 rounded-2xl border border-border bg-card"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <promise.icon size={18} className="text-primary" />
+                    </div>
+                    <p className="text-[14px] font-medium text-foreground">{promise.text}</p>
+                  </motion.div>
+                ))}
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={next}
+                className="w-full h-[50px] rounded-full bg-primary text-primary-foreground font-medium text-[15px]"
+              >
+                I understand
+              </motion.button>
+            </motion.div>
+          )}
+
+          {/* Step 6: Ready */}
+          {step === 6 && (
             <motion.div
               key="ready"
               custom={1}
