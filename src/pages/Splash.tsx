@@ -103,8 +103,8 @@ const Splash = () => {
 
               {/* Tagline */}
               <motion.p
-                initial={{ opacity: 0, y: 8 }}
-                animate={phase === "reveal" ? { opacity: 0.5, y: 0 } : {}}
+                initial={{ opacity: 0.01, y: 8 }}
+                animate={phase === "reveal" ? { opacity: 0.5, y: 0 } : { opacity: 0.01 }}
                 transition={{ duration: 0.5, delay: 0.5, ease: "easeOut" }}
                 className="text-[12px] text-muted-foreground text-center mt-2 tracking-widest uppercase font-light"
               >
