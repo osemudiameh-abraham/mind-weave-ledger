@@ -3,12 +3,7 @@ import { Keyboard, Mic, ScreenShare, Video, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import LiveGlyph from "@/components/live/LiveGlyph";
-
-interface TranscriptEntry {
-  speaker: "You" | "Seven";
-  text: string;
-  id: number;
-}
+import { Switch } from "@/components/ui/switch";
 
 const Live = () => {
   const navigate = useNavigate();
