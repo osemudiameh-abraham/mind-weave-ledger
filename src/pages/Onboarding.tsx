@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, Mic, ShieldCheck, Lock, EyeOff, BanIcon } from "lucide-react";
+import { ArrowLeft, Check, Mic, ShieldCheck, Lock, EyeOff, BanIcon, Smartphone, MessageSquare, Mail, Activity, Brain, AlertTriangle } from "lucide-react";
 import SevenLogo from "@/components/SevenLogo";
 
 const Onboarding = () => {
@@ -13,7 +13,9 @@ const Onboarding = () => {
   const [safeWord, setSafeWord] = useState("");
   const [voiceVerify, setVoiceVerify] = useState(false);
   const [voiceRecorded, setVoiceRecorded] = useState(false);
-  const totalSteps = 6;
+  const [deviceConsent, setDeviceConsent] = useState(false);
+  const [emergencyConsent, setEmergencyConsent] = useState(false);
+  const totalSteps = 7;
 
   const toggle = (arr: string[], val: string, setter: (v: string[]) => void) =>
     setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
