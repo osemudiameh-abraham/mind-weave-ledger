@@ -10,11 +10,7 @@ import ChatInput from "@/components/ChatInput";
 import SevenLogo from "@/components/SevenLogo";
 import { useReminders } from "@/hooks/use-reminders";
 import SideMenu from "@/components/SideMenu";
-
-interface Message {
-  role: "user" | "ai";
-  text: string;
-}
+import { useSections } from "@/hooks/use-sections";
 
 const suggestions = [
   "What patterns did I show this week?",
@@ -26,10 +22,21 @@ const suggestions = [
 ];
 
 const Home = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { reminders, unseen, dueNow, addReminder, markSeen, markAllSeen, dismissReminder } = useReminders();
+  const {
+    sections,
+    visibleSections,
+    activeSection,
+    activeSectionId,
+    setActiveSectionId,
+    createSection,
+    renameSection,
+    deleteSection,
+    toggleHideSection,
+    addMessage,
+  } = useSections();
 
   // Toast for due reminders
   useEffect(() => {
@@ -39,15 +46,18 @@ const Home = () => {
     });
   }, [dueNow, markSeen]);
 
+  const messages = activeSection?.messages || [];
+
   const handleSend = (text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text },
-      {
-        role: "ai",
-        text: `Based on your patterns, here's what I notice about "${text.slice(0, 40)}…" — this connects to a recurring theme in your decisions. I'll keep tracking this.`,
-      },
-    ]);
+    let sectionId = activeSectionId;
+    if (!sectionId) {
+      sectionId = createSection();
+    }
+    addMessage(sectionId!, { role: "user", text });
+    addMessage(sectionId!, {
+      role: "ai",
+      text: `Based on your patterns, here's what I notice about "${text.slice(0, 40)}…" — this connects to a recurring theme in your decisions. I'll keep tracking this.`,
+    });
   };
 
   const userName = localStorage.getItem("seven_user_name") || "there";
@@ -85,7 +95,17 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <SideMenu open={menuOpen} onOpenChange={setMenuOpen} />
+      <SideMenu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        sections={sections}
+        activeSectionId={activeSectionId}
+        onNewSection={() => { createSection(); }}
+        onSelectSection={setActiveSectionId}
+        onRenameSection={renameSection}
+        onDeleteSection={deleteSection}
+        onToggleHideSection={toggleHideSection}
+      />
       <TopNav
         onMenuClick={() => setMenuOpen(true)}
         reminders={reminders}
