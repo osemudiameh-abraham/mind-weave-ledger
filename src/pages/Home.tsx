@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import TypewriterBubble from "@/components/TypewriterBubble";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
