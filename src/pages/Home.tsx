@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import TypewriterBubble from "@/components/TypewriterBubble";
@@ -51,9 +51,21 @@ const Home = () => {
     "Try asking me about your patterns — I'll track what matters to you over time.",
     "Use the suggestion chips below to explore what Seven can do for you.",
     "Check your Vault anytime to revisit saved insights and decisions.",
+    "Head to your Digest for a daily summary of your tracked patterns.",
+    "Seven learns from every conversation — the more you share, the sharper the insights.",
+    "Use the Library to browse all your past conversations and decisions.",
+    "Your Memory page shows everything Seven has learned about you so far.",
+    "Try reviewing a past decision — Seven can help you spot what went right or wrong.",
   ];
 
-  const tipOfTheDay = tips[new Date().getDate() % tips.length];
+  const [tipIndex, setTipIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTipIndex((prev) => (prev + 1) % tips.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [tips.length]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -83,12 +95,14 @@ const Home = () => {
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.6 }}
+              key={tipIndex}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.4 }}
               className="text-[13px] text-muted-foreground text-center mt-4 max-w-[280px] leading-relaxed"
             >
-              {tipOfTheDay}
+              {tips[tipIndex]}
             </motion.p>
 
             <motion.div
