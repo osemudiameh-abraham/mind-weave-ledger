@@ -79,17 +79,18 @@ const Live = () => {
 
       {/* Header */}
       <header
-        className="relative z-10 px-6"
-        style={{ paddingTop: "clamp(54px, 8vh, 72px)", paddingBottom: "16px" }}
+        className="relative z-10 px-6 pt-[env(safe-area-inset-top,16px)]"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 16px), 16px)", paddingBottom: "16px" }}
       >
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-between">
+          <div className="w-10" />
           <div className="flex items-center gap-2">
             <LiveGlyph size={22} animated={session.active} className="text-[hsl(var(--live-foreground))]" />
             <span className="text-[17px] font-medium tracking-[-0.02em]">Live</span>
           </div>
 
           <button
-            className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-[hsl(var(--live-foreground))]"
+            className="w-10 flex items-center justify-center rounded-full p-1.5 text-[hsl(var(--live-foreground))]"
             aria-label="Keyboard"
             onClick={() => session.setShowTextInput((v) => !v)}
           >
