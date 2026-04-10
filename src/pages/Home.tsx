@@ -9,6 +9,7 @@ import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
 import SevenLogo from "@/components/SevenLogo";
 import { useReminders } from "@/hooks/use-reminders";
+import SideMenu from "@/components/SideMenu";
 
 interface Message {
   role: "user" | "ai";
@@ -26,6 +27,7 @@ const suggestions = [
 
 const Home = () => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { reminders, unseen, dueNow, addReminder, markSeen, markAllSeen, dismissReminder } = useReminders();
 
@@ -83,7 +85,9 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <SideMenu open={menuOpen} onOpenChange={setMenuOpen} />
       <TopNav
+        onMenuClick={() => setMenuOpen(true)}
         reminders={reminders}
         unseenCount={unseen.length}
         onAddReminder={addReminder}
