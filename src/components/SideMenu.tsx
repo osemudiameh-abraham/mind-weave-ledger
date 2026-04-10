@@ -144,6 +144,7 @@ const SideMenu = ({
   const hiddenSections = sections.filter((s) => s.hidden);
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-[280px] p-0 flex flex-col">
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border">
@@ -232,7 +233,6 @@ const SideMenu = ({
                     </button>
                   )}
 
-                  {/* Context menu */}
                   {menuOpenId === section.id && (
                     <div className="absolute right-2 top-full z-10 bg-card border border-border rounded-xl shadow-lg py-1 min-w-[140px]">
                       <button
@@ -259,7 +259,6 @@ const SideMenu = ({
               );
             })}
 
-            {/* Show hidden toggle */}
             {hiddenSections.length > 0 && (
               <button
                 onClick={() => setShowHidden(!showHidden)}
@@ -331,37 +330,30 @@ const SideMenu = ({
               Let Seven see, hear, and learn through your devices — in real time.
             </p>
             {deviceTypes.map((device) => {
-              const connectedName = Object.values(connectedDevices).length > 0
-                ? Object.values(connectedDevices).find(() => false) // will use pairing sheet
-                : undefined;
-              const hasConnection = Object.keys(connectedDevices).length > 0;
+              const connectedName = Object.values(connectedDevices).find((name) =>
+                name.toLowerCase().includes(device.label.toLowerCase().split(" ")[0])
+              );
               return (
                 <button
                   key={device.label}
                   onClick={() => handleDeviceClick(device.label)}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors"
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-primary/10`}>
-                    <device.icon size={16} className="text-muted-foreground" />
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${connectedName ? "bg-primary/20" : "bg-primary/10"}`}>
+                    <device.icon size={16} className={connectedName ? "text-primary" : "text-muted-foreground"} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-foreground">{device.label}</p>
-                    <p className="text-[11px] text-muted-foreground">{device.desc}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {connectedName || device.desc}
+                    </p>
                   </div>
+                  {connectedName && (
+                    <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                  )}
                 </button>
               );
             })}
-          </div>
-        </div>
-
-        {/* Device Pairing Sheet */}
-        <DevicePairingSheet
-          open={pairingOpen}
-          onOpenChange={setPairingOpen}
-          deviceCategory={pairingCategory}
-          connectedDevices={Object.keys(connectedDevices)}
-          onDeviceConnected={handleDeviceConnected}
-          onDeviceDisconnected={handleDeviceDisconnected}
           </div>
         </div>
 
@@ -385,7 +377,6 @@ const SideMenu = ({
       </SheetContent>
     </Sheet>
 
-    {/* Device Pairing Sheet */}
     <DevicePairingSheet
       open={pairingOpen}
       onOpenChange={setPairingOpen}
