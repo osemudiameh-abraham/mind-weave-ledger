@@ -72,7 +72,7 @@ const Splash = () => {
                   ease: "easeInOut",
                 }}
               >
-                <img src={sevenLogo} alt="Seven" width={72} height={72} style={{ objectFit: "contain" }} />
+                <SevenLogo size={72} />
               </motion.div>
             </motion.div>
 
