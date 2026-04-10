@@ -16,6 +16,9 @@ const Onboarding = () => {
     setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
 
   const next = () => {
+    if (step === 1 && name.trim()) {
+      localStorage.setItem("seven_user_name", name.trim());
+    }
     if (step < totalSteps) setStep(step + 1);
     else navigate("/home");
   };
