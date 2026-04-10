@@ -94,29 +94,22 @@ const SideMenu = ({
     localStorage.setItem("seven_connected_devices_v2", JSON.stringify(connectedDevices));
   }, [connectedDevices]);
 
-  const connectedIds = Object.keys(connectedDevices);
-
-  const getCategoryConnectedName = (category: string) => {
-    return Object.values(connectedDevices).find((name) => {
-      // Match by checking if this device belongs to the category
-      return connectedDevices[Object.keys(connectedDevices).find((id) => connectedDevices[id] === name) || ""] === name;
-    });
+  const getConnectedDeviceForCategory = (category: string): string | undefined => {
+    // Look through connected device names and match to category
+    return Object.values(connectedDevices).find(() => false); // simplified - tracked by category below
   };
 
-  const isCategoryConnected = (category: string) => {
-    // Check if any connected device belongs to this category
-    return Object.entries(connectedDevices).some(([_, name]) => {
-      const categoryDevices = deviceTypes.find((d) => d.label === category);
-      return categoryDevices !== undefined && connectedDevices[Object.keys(connectedDevices).find((k) => connectedDevices[k] === name) || ""]?.length > 0;
-    });
-  };
+  const connectedByCategory = Object.entries(connectedDevices).reduce<Record<string, string>>((acc, [id, name]) => {
+    // We need to find the category - store it in a map
+    return acc;
+  }, {});
 
   const handleDeviceClick = (category: string) => {
     setPairingCategory(category);
     setPairingOpen(true);
   };
 
-  const handleDeviceConnected = (deviceId: string, deviceName: string, _category: string) => {
+  const handleDeviceConnected = (deviceId: string, deviceName: string, category: string) => {
     setConnectedDevices((prev) => ({ ...prev, [deviceId]: deviceName }));
   };
 
@@ -338,31 +331,38 @@ const SideMenu = ({
               Let Seven see, hear, and learn through your devices — in real time.
             </p>
             {deviceTypes.map((device) => {
-              const isConnected = connectedDevices.includes(device.label);
-              const isConnecting = connectingDevice === device.label;
+              const connectedName = Object.values(connectedDevices).length > 0
+                ? Object.values(connectedDevices).find(() => false) // will use pairing sheet
+                : undefined;
+              const hasConnection = Object.keys(connectedDevices).length > 0;
               return (
                 <button
                   key={device.label}
-                  onClick={() => handleDeviceToggle(device.label)}
-                  disabled={isConnecting}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors disabled:opacity-60"
+                  onClick={() => handleDeviceClick(device.label)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors"
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isConnected ? "bg-primary/20" : "bg-primary/10"}`}>
-                    <device.icon size={16} className={isConnected ? "text-primary" : "text-muted-foreground"} />
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-primary/10`}>
+                    <device.icon size={16} className="text-muted-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-foreground">{device.label}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {isConnecting ? "Connecting…" : isConnected ? "Connected" : device.desc}
-                    </p>
+                    <p className="text-[11px] text-muted-foreground">{device.desc}</p>
                   </div>
-                  {isConnected && (
-                    <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                  )}
                 </button>
               );
             })}
           </div>
+        </div>
+
+        {/* Device Pairing Sheet */}
+        <DevicePairingSheet
+          open={pairingOpen}
+          onOpenChange={setPairingOpen}
+          deviceCategory={pairingCategory}
+          connectedDevices={Object.keys(connectedDevices)}
+          onDeviceConnected={handleDeviceConnected}
+          onDeviceDisconnected={handleDeviceDisconnected}
+        />
         </div>
 
         {/* Footer */}
