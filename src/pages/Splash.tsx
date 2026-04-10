@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import sevenLogo from "@/assets/seven-logo.png";
+import SevenLogo from "@/components/SevenLogo";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
