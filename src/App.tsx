@@ -12,6 +12,7 @@ import Vault from "./pages/Vault";
 import Trace from "./pages/Trace";
 import Digest from "./pages/Digest";
 import Settings from "./pages/Settings";
+import Subscription from "./pages/Subscription";
 import Live from "./pages/Live";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/trace" element={<Trace />} />
           <Route path="/digest" element={<Digest />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/subscription" element={<Subscription />} />
           <Route path="/live" element={<Live />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
