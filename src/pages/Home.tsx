@@ -77,10 +77,19 @@ const Home = () => {
               transition={{ delay: 0.1, duration: 0.5 }}
               className="text-[28px] font-normal text-foreground tracking-[-0.02em] text-center leading-tight"
             >
-              {greeting()},
+              {greeting()}, {userName}
               <br />
               <span className="text-muted-foreground">where should we start?</span>
             </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
+              className="text-[13px] text-muted-foreground text-center mt-4 max-w-[280px] leading-relaxed"
+            >
+              {tipOfTheDay}
+            </motion.p>
 
             <motion.div
               initial={{ opacity: 0, y: 16 }}
