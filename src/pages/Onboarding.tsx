@@ -553,8 +553,8 @@ const Onboarding = () => {
             </motion.div>
           )}
 
-          {/* Step 5: Privacy */}
-          {step === 5 && (
+          {/* Step 6: Privacy */}
+          {step === 6 && (
             <motion.div
               key="privacy"
               custom={1}
@@ -610,8 +610,8 @@ const Onboarding = () => {
             </motion.div>
           )}
 
-          {/* Step 6: Ready */}
-          {step === 6 && (
+          {/* Step 7: Ready */}
+          {step === 7 && (
             <motion.div
               key="ready"
               custom={1}
