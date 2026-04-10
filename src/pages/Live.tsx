@@ -1,30 +1,18 @@
 import { motion } from "framer-motion";
 import { Keyboard, Mic, ScreenShare, Video, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import LiveGlyph from "@/components/live/LiveGlyph";
+import LiveVideoFeed from "@/components/live/LiveVideoFeed";
+import LiveScreenShare from "@/components/live/LiveScreenShare";
+import LiveTranscript from "@/components/live/LiveTranscript";
+import LiveTextInput from "@/components/live/LiveTextInput";
 import { Switch } from "@/components/ui/switch";
+import { useLiveSession } from "@/hooks/use-live-session";
+import type { ReactNode } from "react";
 
 const Live = () => {
   const navigate = useNavigate();
-  const [cameraOn, setCameraOn] = useState(false);
-  const [screenShareOn, setScreenShareOn] = useState(false);
-  const [micOn, setMicOn] = useState(true);
-  const [alwaysListening, setAlwaysListening] = useState(true);
-  const [speaking, setSpeaking] = useState(false);
-
-  useEffect(() => {
-    if (!micOn || !alwaysListening) {
-      setSpeaking(false);
-      return;
-    }
-    const interval = setInterval(() => {
-      setSpeaking((c) => !c);
-    }, 1600);
-    return () => clearInterval(interval);
-  }, [micOn, alwaysListening]);
-
-  const active = alwaysListening && micOn;
+  const session = useLiveSession();
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[hsl(var(--live-background-deep))] text-[hsl(var(--live-foreground))]">
@@ -37,22 +25,31 @@ const Live = () => {
         }}
       />
 
-      {/* Aurora glow — Gemini style */}
+      {/* Camera feed */}
+      <LiveVideoFeed active={session.cameraOn} />
+
+      {/* Screen share feed */}
+      <LiveScreenShare
+        active={session.screenShareOn}
+        onStopped={session.handleScreenShareStopped}
+      />
+
+      {/* Aurora glow */}
       <motion.div
         animate={{
-          opacity: active
-            ? speaking
+          opacity: session.active
+            ? session.speaking
               ? [0.35, 0.55, 0.35]
               : [0.25, 0.38, 0.25]
             : [0.06, 0.1, 0.06],
-          scaleX: speaking ? [1, 1.04, 1] : [1, 1.01, 1],
+          scaleX: session.speaking ? [1, 1.04, 1] : [1, 1.01, 1],
         }}
         transition={{
-          duration: speaking ? 1.4 : 3.2,
+          duration: session.speaking ? 1.4 : 3.2,
           repeat: Infinity,
           ease: "easeInOut",
         }}
-        className="pointer-events-none absolute left-0 right-0"
+        className="pointer-events-none absolute left-0 right-0 z-[6]"
         style={{
           bottom: "80px",
           height: "clamp(160px, 26vh, 220px)",
@@ -65,14 +62,14 @@ const Live = () => {
       {/* Soft upper reflection */}
       <motion.div
         animate={{
-          opacity: active
-            ? speaking
+          opacity: session.active
+            ? session.speaking
               ? [0.08, 0.16, 0.08]
               : [0.04, 0.1, 0.04]
             : [0.01, 0.03, 0.01],
         }}
         transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none absolute inset-x-0 bottom-0"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[6]"
         style={{
           height: "clamp(220px, 36vh, 320px)",
           background:
@@ -87,21 +84,32 @@ const Live = () => {
       >
         <div className="flex items-center justify-center">
           <div className="flex items-center gap-2">
-            <LiveGlyph size={22} animated={active} className="text-[hsl(var(--live-foreground))]" />
+            <LiveGlyph size={22} animated={session.active} className="text-[hsl(var(--live-foreground))]" />
             <span className="text-[17px] font-medium tracking-[-0.02em]">Live</span>
           </div>
 
           <button
             className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-[hsl(var(--live-foreground))]"
             aria-label="Keyboard"
+            onClick={() => session.setShowTextInput((v) => !v)}
           >
             <Keyboard size={23} strokeWidth={1.9} />
           </button>
         </div>
       </header>
 
+      {/* Transcript overlay */}
+      <LiveTranscript entries={session.transcript} visible />
+
       {/* Center spacer */}
       <div className="relative z-10 flex-1" />
+
+      {/* Text input */}
+      <LiveTextInput
+        visible={session.showTextInput}
+        onSend={session.sendTextMessage}
+        onClose={() => session.setShowTextInput(false)}
+      />
 
       {/* Always listening toggle */}
       <motion.div
@@ -121,14 +129,14 @@ const Live = () => {
             Always listening
           </span>
           <Switch
-            checked={alwaysListening}
-            onCheckedChange={setAlwaysListening}
+            checked={session.alwaysListening}
+            onCheckedChange={session.setAlwaysListening}
             className="h-[22px] w-[40px] scale-[0.92] data-[state=checked]:bg-primary data-[state=unchecked]:bg-white/15"
           />
         </div>
       </motion.div>
 
-      {/* Bottom controls — flat, no dock */}
+      {/* Bottom controls */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -137,25 +145,25 @@ const Live = () => {
         style={{ paddingBottom: "clamp(32px, 5vh, 48px)" }}
       >
         <ControlButton
-          active={cameraOn}
+          active={session.cameraOn}
           label="Toggle camera"
-          onClick={() => setCameraOn((v) => !v)}
+          onClick={session.toggleCamera}
         >
           <Video size={26} strokeWidth={1.8} />
         </ControlButton>
 
         <ControlButton
-          active={screenShareOn}
+          active={session.screenShareOn}
           label="Toggle screen share"
-          onClick={() => setScreenShareOn((v) => !v)}
+          onClick={session.toggleScreenShare}
         >
           <ScreenShare size={26} strokeWidth={1.8} />
         </ControlButton>
 
         <ControlButton
-          active={micOn}
+          active={session.micOn}
           label="Toggle microphone"
-          onClick={() => setMicOn((v) => !v)}
+          onClick={session.toggleMic}
         >
           <Mic size={26} strokeWidth={1.8} />
         </ControlButton>
