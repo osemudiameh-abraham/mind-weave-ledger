@@ -14,6 +14,7 @@ import Digest from "./pages/Digest";
 import Settings from "./pages/Settings";
 import Subscription from "./pages/Subscription";
 import Live from "./pages/Live";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/settings" element={<Settings />} />
           <Route path="/subscription" element={<Subscription />} />
           <Route path="/live" element={<Live />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

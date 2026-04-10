@@ -40,7 +40,7 @@ const sections = [
     title: "Data & Privacy",
     items: [
       { icon: Database, label: "Export Data", desc: "Download all your data" },
-      { icon: Shield, label: "Privacy", desc: "Data handling, retention" },
+      { icon: Shield, label: "Privacy Policy", desc: "How we protect your data", path: "/privacy" },
       { icon: Trash2, label: "Delete Account", desc: "Permanently remove all data", danger: true },
     ],
   },
@@ -75,6 +75,7 @@ const Settings = () => {
               {section.items.map((item, i) => (
                 <button
                   key={i}
+                  onClick={() => (item as any).path && navigate((item as any).path)}
                   className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left"
                 >
                   <item.icon
