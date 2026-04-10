@@ -18,7 +18,7 @@ const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDism
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 bg-background">
-      <div className="flex items-center justify-between px-4 h-14 max-w-lg mx-auto">
+      <div className="flex items-center justify-between px-4 h-14">
         <button
           onClick={onMenuClick}
           className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
