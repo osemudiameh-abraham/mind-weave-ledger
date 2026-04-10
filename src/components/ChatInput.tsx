@@ -10,6 +10,7 @@ interface ChatInputProps {
 
 const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   const [value, setValue] = useState("");
+  const [recording, setRecording] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasText = value.trim().length > 0;
 
