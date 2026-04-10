@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Keyboard, Mic, ScreenShare, Video, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,12 +10,11 @@ const Live = () => {
   const [cameraOn, setCameraOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
   const [micOn, setMicOn] = useState(true);
+  const [alwaysListening, setAlwaysListening] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
 
-  // Simulate speaking pulse
   useEffect(() => {
-    if (!micOn) {
+    if (!micOn || !alwaysListening) {
       setSpeaking(false);
       return;
     }
@@ -23,17 +22,9 @@ const Live = () => {
       setSpeaking((c) => !c);
     }, 1600);
     return () => clearInterval(interval);
-  }, [micOn]);
+  }, [micOn, alwaysListening]);
 
-  // Simulated transcript for demo
-  useEffect(() => {
-    const timer1 = setTimeout(() => {
-      setTranscript([{ speaker: "Seven", text: "Hey there! How can I help?", id: 1 }]);
-    }, 2000);
-    return () => clearTimeout(timer1);
-  }, []);
-
-  const active = micOn;
+  const active = alwaysListening && micOn;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[hsl(var(--live-background-deep))] text-[hsl(var(--live-foreground))]">
@@ -109,28 +100,33 @@ const Live = () => {
         </div>
       </header>
 
-      {/* Transcript area */}
-      <div className="relative z-10 flex flex-1 flex-col justify-end px-6 pb-8">
-        <AnimatePresence mode="popLayout">
-          {transcript.map((entry) => (
-            <motion.div
-              key={entry.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
-              className="mb-3"
-            >
-              <p className="text-[15px] leading-relaxed text-[hsl(var(--live-foreground))]">
-                <span className="font-medium text-[hsl(var(--live-foreground-muted))]">
-                  {entry.speaker}:
-                </span>{" "}
-                {entry.text}
-              </p>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      {/* Center spacer */}
+      <div className="relative z-10 flex-1" />
+
+      {/* Always listening toggle */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.28 }}
+        className="relative z-10 mb-6 flex items-center justify-center"
+      >
+        <div
+          className="flex items-center gap-3 rounded-full px-4 py-2"
+          style={{
+            background: "hsl(var(--live-background-elevated) / 0.88)",
+            boxShadow: "0 8px 24px hsl(var(--live-background-deep) / 0.18)",
+          }}
+        >
+          <span className="text-[12px] font-medium text-[hsl(var(--live-foreground-muted))]">
+            Always listening
+          </span>
+          <Switch
+            checked={alwaysListening}
+            onCheckedChange={setAlwaysListening}
+            className="h-[22px] w-[40px] scale-[0.92] data-[state=checked]:bg-primary data-[state=unchecked]:bg-white/15"
+          />
+        </div>
+      </motion.div>
 
       {/* Bottom controls — flat, no dock */}
       <motion.div
