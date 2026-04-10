@@ -362,7 +362,7 @@ const SideMenu = ({
           connectedDevices={Object.keys(connectedDevices)}
           onDeviceConnected={handleDeviceConnected}
           onDeviceDisconnected={handleDeviceDisconnected}
-        />
+          </div>
         </div>
 
         {/* Footer */}
@@ -384,6 +384,17 @@ const SideMenu = ({
         </div>
       </SheetContent>
     </Sheet>
+
+    {/* Device Pairing Sheet */}
+    <DevicePairingSheet
+      open={pairingOpen}
+      onOpenChange={setPairingOpen}
+      deviceCategory={pairingCategory}
+      connectedDevices={Object.keys(connectedDevices)}
+      onDeviceConnected={handleDeviceConnected}
+      onDeviceDisconnected={handleDeviceDisconnected}
+    />
+    </>
   );
 };
 
