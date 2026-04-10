@@ -15,6 +15,9 @@ import Settings from "./pages/Settings";
 import Subscription from "./pages/Subscription";
 import Live from "./pages/Live";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import Library from "./pages/Library";
+import Memory from "./pages/Memory";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
