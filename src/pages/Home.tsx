@@ -83,7 +83,13 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav />
+      <TopNav
+        reminders={reminders}
+        unseenCount={unseen.length}
+        onAddReminder={addReminder}
+        onDismissReminder={dismissReminder}
+        onMarkAllSeen={markAllSeen}
+      />
 
       <div className="pt-14 pb-32 px-4 max-w-lg mx-auto">
         {messages.length === 0 ? (
