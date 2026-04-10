@@ -95,12 +95,14 @@ const Home = () => {
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.6 }}
+              key={tipIndex}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.4 }}
               className="text-[13px] text-muted-foreground text-center mt-4 max-w-[280px] leading-relaxed"
             >
-              {tipOfTheDay}
+              {tips[tipIndex]}
             </motion.p>
 
             <motion.div
