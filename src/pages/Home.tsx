@@ -36,12 +36,24 @@ const Home = () => {
     ]);
   };
 
+  const userName = "User"; // TODO: replace with actual user name from auth
+
   const greeting = () => {
     const h = new Date().getHours();
     if (h < 12) return "Good morning";
     if (h < 17) return "Good afternoon";
-    return "Good evening";
+    if (h < 21) return "Good evening";
+    return "Good night";
   };
+
+  const tips = [
+    "Tap the live button to start speaking with Seven — it's the fastest way to get to know each other.",
+    "Try asking me about your patterns — I'll track what matters to you over time.",
+    "Use the suggestion chips below to explore what Seven can do for you.",
+    "Check your Vault anytime to revisit saved insights and decisions.",
+  ];
+
+  const tipOfTheDay = tips[new Date().getDate() % tips.length];
 
   return (
     <div className="min-h-screen bg-background">
