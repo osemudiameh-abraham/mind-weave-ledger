@@ -18,135 +18,152 @@ const Live = () => {
       setSpeaking(false);
       return;
     }
-
-    const interval = setInterval(() => {
-      setSpeaking((current) => !current);
-    }, 1400);
-
+    const interval = setInterval(() => setSpeaking((c) => !c), 1400);
     return () => clearInterval(interval);
   }, [alwaysListening, muted]);
 
-  const liveActive = alwaysListening && !muted;
+  const active = alwaysListening && !muted;
 
   return (
-    <div
-      className="relative min-h-screen overflow-hidden bg-[hsl(var(--live-background-deep))] text-[hsl(var(--live-foreground))]"
-      style={{
-        backgroundImage:
-          "linear-gradient(180deg, hsl(var(--live-background-deep)) 0%, hsl(var(--live-background)) 100%)",
-      }}
-    >
-      <motion.div
-        animate={{
-          opacity: liveActive ? [0.7, 1, 0.75] : [0.3, 0.45, 0.3],
-          scale: speaking ? [1, 1.06, 1] : [1, 1.02, 1],
-        }}
-        transition={{ duration: speaking ? 1.2 : 3.2, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none absolute inset-x-[-14%] bottom-[-14%] h-[38%] rounded-[50%]"
-        style={{
-          background:
-            "radial-gradient(60% 90% at 50% 100%, hsl(var(--live-glow-primary) / 0.88) 0%, hsl(var(--live-glow-secondary) / 0.55) 38%, transparent 75%)",
-          filter: "blur(18px)",
-        }}
-      />
-
-      <motion.div
-        animate={{ opacity: liveActive ? [0.14, 0.22, 0.14] : [0.06, 0.1, 0.06] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[32%]"
-        style={{
-          background:
-            "linear-gradient(180deg, transparent 0%, hsl(var(--live-glow-primary) / 0.12) 60%, hsl(var(--live-glow-primary) / 0.2) 100%)",
-        }}
-      />
-
-      <div className="relative z-10 flex min-h-screen flex-col px-5 pb-10 pt-10">
-        <div className="relative mt-8">
-          <div className="flex items-center justify-center gap-2 text-[hsl(var(--live-foreground))]">
-            <LiveGlyph size={24} animated={liveActive} className="text-[hsl(var(--live-foreground))]" />
-            <span className="text-[18px] font-medium tracking-[-0.02em]">Live</span>
-          </div>
-
-          <div className="absolute right-0 top-1/2 -translate-y-1/2 rounded-2xl p-2 text-[hsl(var(--live-foreground))]">
-            <Keyboard size={24} strokeWidth={2.1} />
-          </div>
+    <div className="fixed inset-0 flex flex-col" style={{ background: "hsl(224, 22%, 8%)" }}>
+      {/* ── Header ── */}
+      <div className="relative z-10 flex items-center justify-center px-5 pt-12 pb-3">
+        <div className="flex items-center gap-1.5">
+          <LiveGlyph size={20} animated={active} className="text-white" />
+          <span className="text-[17px] font-medium text-white tracking-[-0.01em]">Live</span>
         </div>
-
-        <div className="flex-1" />
-
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12, duration: 0.35 }}
-          className="mb-4 flex items-center justify-center"
+        <button
+          className="absolute right-5 top-12 p-1 text-white/70"
+          aria-label="Keyboard"
         >
-          <div
-            className="flex items-center gap-3 rounded-full px-4 py-2 text-[13px]"
-            style={{
-              background: "hsl(var(--live-background-elevated) / 0.84)",
-              color: "hsl(var(--live-foreground-muted))",
-              boxShadow: "0 8px 30px hsl(225 22% 8% / 0.28)",
-            }}
-          >
-            <span className="font-medium">Always listening</span>
-            <Switch
-              checked={alwaysListening}
-              onCheckedChange={setAlwaysListening}
-              className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-[hsl(var(--live-control))]"
-            />
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 28 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.18, duration: 0.4 }}
-          className="mx-auto w-full max-w-[360px] rounded-[34px] px-5 py-5"
-          style={{
-            background: "linear-gradient(180deg, hsl(var(--live-dock) / 0.88), hsl(var(--live-background-elevated) / 0.96))",
-            boxShadow: "0 18px 50px hsl(225 22% 8% / 0.44)",
-          }}
-        >
-          <div className="grid grid-cols-4 gap-3">
-            <button
-              onClick={() => setCameraOn((value) => !value)}
-              className="flex h-[74px] items-center justify-center rounded-[28px] transition-transform active:scale-95"
-              style={{ background: cameraOn ? "hsl(var(--live-control-active))" : "hsl(var(--live-control))" }}
-              aria-label="Toggle camera"
-            >
-              {cameraOn ? <Video size={30} /> : <VideoOff size={30} />}
-            </button>
-
-            <button
-              onClick={() => setScreenShareOn((value) => !value)}
-              className="flex h-[74px] items-center justify-center rounded-[28px] transition-transform active:scale-95"
-              style={{ background: screenShareOn ? "hsl(var(--live-control-active))" : "hsl(var(--live-control))" }}
-              aria-label="Toggle screen share"
-            >
-              <ScreenShare size={30} />
-            </button>
-
-            <button
-              onClick={() => setMuted((value) => !value)}
-              className="flex h-[74px] items-center justify-center rounded-[28px] transition-transform active:scale-95"
-              style={{ background: muted ? "hsl(var(--live-control-active))" : "hsl(var(--live-control))" }}
-              aria-label="Toggle microphone"
-            >
-              {muted ? <MicOff size={30} /> : <Mic size={30} />}
-            </button>
-
-            <button
-              onClick={() => navigate("/home")}
-              className="flex h-[74px] items-center justify-center rounded-[28px] bg-destructive text-destructive-foreground transition-transform active:scale-95"
-              aria-label="End live session"
-            >
-              <X size={34} strokeWidth={2.5} />
-            </button>
-          </div>
-        </motion.div>
+          <Keyboard size={22} strokeWidth={1.8} />
+        </button>
       </div>
+
+      {/* ── Spacer ── */}
+      <div className="flex-1" />
+
+      {/* ── Glow band ── */}
+      <div className="relative z-0 mx-5 mb-5">
+        {/* Primary bright glow pill */}
+        <motion.div
+          animate={{
+            opacity: active ? (speaking ? [0.85, 1, 0.85] : [0.6, 0.8, 0.6]) : [0.2, 0.3, 0.2],
+            scaleX: speaking ? [1, 1.02, 1] : [1, 1.005, 1],
+            scaleY: speaking ? [1, 1.15, 1] : [1, 1.04, 1],
+          }}
+          transition={{
+            duration: speaking ? 1.2 : 3,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+          className="h-[72px] w-full rounded-[36px]"
+          style={{
+            background: "linear-gradient(90deg, hsl(213, 80%, 52%) 0%, hsl(220, 84%, 58%) 40%, hsl(220, 84%, 55%) 60%, hsl(213, 80%, 52%) 100%)",
+            boxShadow: active
+              ? "0 0 60px 10px hsl(220, 84%, 55% / 0.5), 0 0 120px 30px hsl(220, 84%, 55% / 0.25)"
+              : "0 0 40px 8px hsl(220, 84%, 55% / 0.2)",
+          }}
+        />
+        {/* Soft diffused glow behind */}
+        <motion.div
+          animate={{
+            opacity: active ? [0.3, 0.5, 0.3] : [0.1, 0.15, 0.1],
+          }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -inset-x-4 -top-10 -bottom-4 rounded-[48px]"
+          style={{
+            background: "radial-gradient(ellipse 100% 80% at 50% 60%, hsl(220, 84%, 55% / 0.35), transparent 70%)",
+            filter: "blur(20px)",
+            zIndex: -1,
+          }}
+        />
+      </div>
+
+      {/* ── Always listening toggle ── */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+        className="flex items-center justify-center mb-5"
+      >
+        <div
+          className="flex items-center gap-3 rounded-full px-4 py-2"
+          style={{ background: "hsl(224, 18%, 14% / 0.9)" }}
+        >
+          <span className="text-[13px] font-medium text-white/60">Always listening</span>
+          <Switch
+            checked={alwaysListening}
+            onCheckedChange={setAlwaysListening}
+            className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-white/15 h-[22px] w-[40px]"
+          />
+        </div>
+      </motion.div>
+
+      {/* ── Controls dock ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15, duration: 0.35 }}
+        className="flex items-center justify-center gap-[10px] px-5 pb-10"
+      >
+        <ControlButton
+          active={cameraOn}
+          onClick={() => setCameraOn((v) => !v)}
+          label="Camera"
+        >
+          {cameraOn ? <Video size={26} strokeWidth={1.8} /> : <VideoOff size={26} strokeWidth={1.8} />}
+        </ControlButton>
+
+        <ControlButton
+          active={screenShareOn}
+          onClick={() => setScreenShareOn((v) => !v)}
+          label="Screen share"
+        >
+          <ScreenShare size={26} strokeWidth={1.8} />
+        </ControlButton>
+
+        <ControlButton
+          active={!muted}
+          onClick={() => setMuted((v) => !v)}
+          label="Microphone"
+        >
+          {muted ? <MicOff size={26} strokeWidth={1.8} /> : <Mic size={26} strokeWidth={1.8} />}
+        </ControlButton>
+
+        <motion.button
+          whileTap={{ scale: 0.93 }}
+          onClick={() => navigate("/home")}
+          className="flex h-[66px] flex-1 items-center justify-center rounded-[24px] bg-destructive text-white"
+          aria-label="End session"
+        >
+          <X size={30} strokeWidth={2.5} />
+        </motion.button>
+      </motion.div>
     </div>
   );
 };
+
+/* ── Reusable control button ── */
+interface ControlButtonProps {
+  active?: boolean;
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}
+
+const ControlButton = ({ active, onClick, label, children }: ControlButtonProps) => (
+  <motion.button
+    whileTap={{ scale: 0.93 }}
+    onClick={onClick}
+    className="flex h-[66px] w-[72px] items-center justify-center rounded-[24px] text-white transition-colors"
+    style={{
+      background: active ? "hsl(220, 28%, 26%)" : "hsl(220, 20%, 18%)",
+    }}
+    aria-label={label}
+  >
+    {children}
+  </motion.button>
+);
 
 export default Live;
