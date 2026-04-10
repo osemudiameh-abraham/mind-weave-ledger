@@ -51,9 +51,21 @@ const Home = () => {
     "Try asking me about your patterns — I'll track what matters to you over time.",
     "Use the suggestion chips below to explore what Seven can do for you.",
     "Check your Vault anytime to revisit saved insights and decisions.",
+    "Head to your Digest for a daily summary of your tracked patterns.",
+    "Seven learns from every conversation — the more you share, the sharper the insights.",
+    "Use the Library to browse all your past conversations and decisions.",
+    "Your Memory page shows everything Seven has learned about you so far.",
+    "Try reviewing a past decision — Seven can help you spot what went right or wrong.",
   ];
 
-  const tipOfTheDay = tips[new Date().getDate() % tips.length];
+  const [tipIndex, setTipIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTipIndex((prev) => (prev + 1) % tips.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [tips.length]);
 
   return (
     <div className="min-h-screen bg-background">
