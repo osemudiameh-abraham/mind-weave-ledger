@@ -39,6 +39,19 @@
     --surface: 0 0% 100%;
     --surface-hover: 220 14% 96%;
 
+    --live-background: 224 18% 10%;
+    --live-background-elevated: 224 16% 14%;
+    --live-background-deep: 225 22% 8%;
+    --live-foreground: 0 0% 100%;
+    --live-foreground-muted: 220 16% 82%;
+    --live-trigger: 228 38% 92%;
+    --live-trigger-foreground: 220 16% 22%;
+    --live-control: 220 24% 24%;
+    --live-control-active: 221 37% 30%;
+    --live-dock: 219 25% 21%;
+    --live-glow-primary: 220 84% 57%;
+    --live-glow-secondary: 213 78% 63%;
+
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 220 15% 30%;
     --sidebar-primary: 220 82% 46%;
@@ -80,6 +93,19 @@
 
     --surface: 220 15% 12%;
     --surface-hover: 220 10% 18%;
+
+    --live-background: 224 18% 10%;
+    --live-background-elevated: 224 16% 14%;
+    --live-background-deep: 225 22% 8%;
+    --live-foreground: 0 0% 100%;
+    --live-foreground-muted: 220 16% 82%;
+    --live-trigger: 228 38% 92%;
+    --live-trigger-foreground: 220 16% 22%;
+    --live-control: 220 24% 24%;
+    --live-control-active: 221 37% 30%;
+    --live-dock: 219 25% 21%;
+    --live-glow-primary: 220 84% 57%;
+    --live-glow-secondary: 213 78% 63%;
 
     --sidebar-background: 220 15% 8%;
     --sidebar-foreground: 0 0% 93%;
