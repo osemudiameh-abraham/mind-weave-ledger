@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import TypewriterBubble from "@/components/TypewriterBubble";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
@@ -96,21 +97,13 @@ const Home = () => {
                 transition={{ duration: 0.25 }}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div
-                  className={`max-w-[85%] px-4 py-3 text-[14px] leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-primary/10 text-foreground rounded-[20px] rounded-br-md"
-                      : "text-foreground"
-                  }`}
-                >
-                  {msg.role === "ai" && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <SevenLogo size={16} />
-                      <span className="text-[12px] font-medium text-muted-foreground">Seven</span>
-                    </div>
-                  )}
-                  {msg.text}
-                </div>
+                {msg.role === "user" ? (
+                  <div className="max-w-[85%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
+                    {msg.text}
+                  </div>
+                ) : (
+                  <TypewriterBubble text={msg.text} />
+                )}
               </motion.div>
             ))}
           </div>
