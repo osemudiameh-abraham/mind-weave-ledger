@@ -1,8 +1,7 @@
 import { motion } from "framer-motion";
 import { Check, Crown, Sparkles } from "lucide-react";
 import { useState } from "react";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 
 const features = [
   "Unlimited conversations",
@@ -20,8 +19,7 @@ const Subscription = () => {
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-16 pb-28 px-4 max-w-lg mx-auto">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -118,8 +116,7 @@ const Subscription = () => {
           Your data stays yours, always. Seven will never sell your information.
         </motion.p>
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 

@@ -2,8 +2,7 @@ import { motion } from "framer-motion";
 import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -47,10 +46,8 @@ const Profile = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
-        {/* Profile card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
           className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border mt-4 mb-6">
           <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-lg">
@@ -63,7 +60,6 @@ const Profile = () => {
           <button className="text-[13px] text-primary font-medium hover:underline transition-all">Edit</button>
         </motion.div>
 
-        {/* Sections */}
         {sections.map((section, sectionIdx) => (
           <motion.div
             key={section.title}
@@ -96,7 +92,6 @@ const Profile = () => {
           </motion.div>
         ))}
 
-        {/* Sign out */}
         <motion.button
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -108,8 +103,7 @@ const Profile = () => {
           Sign out
         </motion.button>
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 

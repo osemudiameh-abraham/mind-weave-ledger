@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, XCircle, Clock, TrendingUp, Eye, Shield } from "lucide-react";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 
 const decisions = [
   { text: "Wake up at 6am every day", date: "Apr 2", status: "kept" as const, outcome: "Maintained for 5 days straight" },
@@ -54,12 +53,10 @@ const Memory = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
         <h1 className="text-[18px] font-normal text-foreground mt-4 mb-5 tracking-[-0.01em]">Memory Intelligence</h1>
 
-        {/* Tabs */}
         <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar pb-0.5">
           {tabs.map((t) => (
             <button key={t} onClick={() => setTab(t)}
@@ -73,7 +70,6 @@ const Memory = () => {
           ))}
         </div>
 
-        {/* Decisions */}
         {tab === "Decisions" && (
           <div className="flex flex-col gap-3">
             {decisions.map((d, i) => (
@@ -90,7 +86,6 @@ const Memory = () => {
           </div>
         )}
 
-        {/* Patterns */}
         {tab === "Patterns" && (
           <div className="flex flex-col gap-3">
             {patterns.map((p, i) => (
@@ -121,7 +116,6 @@ const Memory = () => {
           </div>
         )}
 
-        {/* Identity */}
         {tab === "Identity" && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-3 gap-3">
@@ -162,7 +156,6 @@ const Memory = () => {
           </div>
         )}
 
-        {/* Memory Audit */}
         {tab === "Memory" && (
           <div className="flex flex-col gap-2">
             {facts.map((f, i) => (
@@ -183,8 +176,7 @@ const Memory = () => {
           </div>
         )}
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 

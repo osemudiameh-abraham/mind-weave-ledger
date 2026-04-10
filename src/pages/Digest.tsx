@@ -1,13 +1,11 @@
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus, CheckCircle2, AlertCircle } from "lucide-react";
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
+import AppLayout from "@/components/AppLayout";
 import SevenLogo from "@/components/SevenLogo";
 
 const Digest = () => {
   return (
-    <div className="min-h-screen bg-background">
-      <TopNav />
+    <AppLayout>
       <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -98,8 +96,7 @@ const Digest = () => {
           </p>
         </motion.div>
       </div>
-      <BottomNav />
-    </div>
+    </AppLayout>
   );
 };
 
