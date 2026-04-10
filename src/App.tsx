@@ -41,6 +41,9 @@ const App = () => (
           <Route path="/subscription" element={<Subscription />} />
           <Route path="/live" element={<Live />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/library" element={<Library />} />
+          <Route path="/memory" element={<Memory />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
