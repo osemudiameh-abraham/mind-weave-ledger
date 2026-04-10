@@ -99,13 +99,19 @@ const Home = () => {
 
             <motion.p
               key={tipIndex}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.4 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
               className="text-[13px] text-muted-foreground text-center mt-4 max-w-[280px] leading-relaxed"
             >
-              {tips[tipIndex]}
+              {tipText}
+              {!tipDone && (
+                <motion.span
+                  animate={{ opacity: [1, 0] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                  className="inline-block ml-0.5 w-[2px] h-[14px] bg-muted-foreground align-middle"
+                />
+              )}
             </motion.p>
 
             <motion.div
