@@ -9,6 +9,7 @@ import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
 import SevenLogo from "@/components/SevenLogo";
 import { useReminders } from "@/hooks/use-reminders";
+import SideMenu from "@/components/SideMenu";
 
 interface Message {
   role: "user" | "ai";
