@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import TypewriterBubble from "@/components/TypewriterBubble";
+import useTypewriter from "@/hooks/use-typewriter";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
@@ -59,13 +60,15 @@ const Home = () => {
   ];
 
   const [tipIndex, setTipIndex] = useState(0);
+  const { displayed: tipText, done: tipDone } = useTypewriter(tips[tipIndex], 25);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (!tipDone) return;
+    const timeout = setTimeout(() => {
       setTipIndex((prev) => (prev + 1) % tips.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [tips.length]);
+    }, 2500);
+    return () => clearTimeout(timeout);
+  }, [tipDone, tips.length]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -96,13 +99,19 @@ const Home = () => {
 
             <motion.p
               key={tipIndex}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.4 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
               className="text-[13px] text-muted-foreground text-center mt-4 max-w-[280px] leading-relaxed"
             >
-              {tips[tipIndex]}
+              {tipText}
+              {!tipDone && (
+                <motion.span
+                  animate={{ opacity: [1, 0] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                  className="inline-block ml-0.5 w-[2px] h-[14px] bg-muted-foreground align-middle"
+                />
+              )}
             </motion.p>
 
             <motion.div
