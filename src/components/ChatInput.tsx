@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Mic, Send, Plus, Camera } from "lucide-react";
+import { Mic, Send, Plus } from "lucide-react";
 import { motion } from "framer-motion";
+import LiveButton from "./LiveButton";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -59,15 +60,16 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             </motion.button>
           ) : (
             <>
-              <button className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5">
-                <Camera size={20} />
-              </button>
-              <button
-                onClick={onLive}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5"
-              >
-                <Mic size={20} />
-              </button>
+              {onLive && (
+                <button
+                  onClick={onLive}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5"
+                  aria-label="Start voice mode"
+                >
+                  <Mic size={20} />
+                </button>
+              )}
+              {onLive && <LiveButton onClick={onLive} />}
             </>
           )}
         </div>
