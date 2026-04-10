@@ -105,14 +105,14 @@ const Live = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.35 }}
-        className="flex items-center justify-center gap-3 px-6 pb-10"
+        className="flex items-center justify-center gap-[10px] px-5 pb-10"
       >
         <ControlButton
           active={cameraOn}
           onClick={() => setCameraOn((v) => !v)}
           label="Camera"
         >
-          {cameraOn ? <Video size={24} strokeWidth={1.8} /> : <VideoOff size={24} strokeWidth={1.8} />}
+          {cameraOn ? <Video size={26} strokeWidth={1.8} /> : <VideoOff size={26} strokeWidth={1.8} />}
         </ControlButton>
 
         <ControlButton
@@ -120,7 +120,7 @@ const Live = () => {
           onClick={() => setScreenShareOn((v) => !v)}
           label="Screen share"
         >
-          <ScreenShare size={24} strokeWidth={1.8} />
+          <ScreenShare size={26} strokeWidth={1.8} />
         </ControlButton>
 
         <ControlButton
@@ -128,16 +128,16 @@ const Live = () => {
           onClick={() => setMuted((v) => !v)}
           label="Microphone"
         >
-          {muted ? <MicOff size={24} strokeWidth={1.8} /> : <Mic size={24} strokeWidth={1.8} />}
+          {muted ? <MicOff size={26} strokeWidth={1.8} /> : <Mic size={26} strokeWidth={1.8} />}
         </ControlButton>
 
         <motion.button
           whileTap={{ scale: 0.93 }}
           onClick={() => navigate("/home")}
-          className="flex h-[60px] w-[80px] items-center justify-center rounded-[22px] bg-destructive text-white"
+          className="flex h-[66px] flex-1 items-center justify-center rounded-[24px] bg-destructive text-white"
           aria-label="End session"
         >
-          <X size={28} strokeWidth={2.5} />
+          <X size={30} strokeWidth={2.5} />
         </motion.button>
       </motion.div>
     </div>
