@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Mic, Send, Plus } from "lucide-react";
-import { motion } from "framer-motion";
+import { Mic, MicOff, Send, Plus } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import LiveButton from "./LiveButton";
 
 interface ChatInputProps {
