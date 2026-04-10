@@ -60,13 +60,15 @@ const Home = () => {
   ];
 
   const [tipIndex, setTipIndex] = useState(0);
+  const { displayed: tipText, done: tipDone } = useTypewriter(tips[tipIndex], 25);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (!tipDone) return;
+    const timeout = setTimeout(() => {
       setTipIndex((prev) => (prev + 1) % tips.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [tips.length]);
+    }, 2500);
+    return () => clearTimeout(timeout);
+  }, [tipDone, tips.length]);
 
   return (
     <div className="min-h-screen bg-background">
