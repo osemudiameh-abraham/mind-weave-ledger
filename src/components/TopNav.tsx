@@ -1,12 +1,19 @@
 import { Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import SevenLogo from "./SevenLogo";
+import RemindersSheet from "./RemindersSheet";
+import type { Reminder } from "@/hooks/use-reminders";
 
 interface TopNavProps {
   onMenuClick?: () => void;
+  reminders?: Reminder[];
+  unseenCount?: number;
+  onAddReminder?: (title: string, dueAt: Date, description?: string) => void;
+  onDismissReminder?: (id: string) => void;
+  onMarkAllSeen?: () => void;
 }
 
-const TopNav = ({ onMenuClick }: TopNavProps) => {
+const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDismissReminder, onMarkAllSeen }: TopNavProps) => {
   const navigate = useNavigate();
 
   return (
@@ -27,14 +34,25 @@ const TopNav = ({ onMenuClick }: TopNavProps) => {
           <span className="font-medium text-foreground text-[16px] tracking-tight">Seven</span>
         </button>
 
-        <button
-          onClick={() => navigate("/settings")}
-          className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
-        >
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[13px] font-medium">
-            U
-          </div>
-        </button>
+        <div className="flex items-center gap-1">
+          {reminders && onAddReminder && onDismissReminder && onMarkAllSeen && (
+            <RemindersSheet
+              reminders={reminders}
+              unseenCount={unseenCount}
+              onAdd={onAddReminder}
+              onDismiss={onDismissReminder}
+              onMarkAllSeen={onMarkAllSeen}
+            />
+          )}
+          <button
+            onClick={() => navigate("/settings")}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+          >
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[13px] font-medium">
+              {(localStorage.getItem("seven_user_name") || "U").charAt(0).toUpperCase()}
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );

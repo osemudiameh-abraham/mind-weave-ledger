@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import TypewriterBubble from "@/components/TypewriterBubble";
 import useTypewriter from "@/hooks/use-typewriter";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
 import ChatInput from "@/components/ChatInput";
 import SevenLogo from "@/components/SevenLogo";
+import { useReminders } from "@/hooks/use-reminders";
 
 interface Message {
   role: "user" | "ai";
@@ -25,6 +27,15 @@ const suggestions = [
 const Home = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const navigate = useNavigate();
+  const { reminders, unseen, dueNow, addReminder, markSeen, markAllSeen, dismissReminder } = useReminders();
+
+  // Toast for due reminders
+  useEffect(() => {
+    dueNow.forEach((r) => {
+      toast(r.title, { description: r.description || "Reminder from Seven", duration: 6000 });
+      markSeen(r.id);
+    });
+  }, [dueNow, markSeen]);
 
   const handleSend = (text: string) => {
     setMessages((prev) => [
@@ -72,7 +83,13 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav />
+      <TopNav
+        reminders={reminders}
+        unseenCount={unseen.length}
+        onAddReminder={addReminder}
+        onDismissReminder={dismissReminder}
+        onMarkAllSeen={markAllSeen}
+      />
 
       <div className="pt-14 pb-32 px-4 max-w-lg mx-auto">
         {messages.length === 0 ? (
