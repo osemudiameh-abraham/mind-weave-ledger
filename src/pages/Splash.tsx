@@ -50,7 +50,7 @@ const Splash = () => {
         {phase !== "exit" ? (
           <motion.div
             key="splash-content"
-            exit={{ opacity: 0, scale: 0.9, filter: "blur(8px)" }}
+            exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.5, ease: "easeIn" }}
             className="flex flex-col items-center z-10"
           >
@@ -72,23 +72,9 @@ const Splash = () => {
                 }}
               >
                 <svg width="72" height="56" viewBox="0 0 36 28" fill="none">
-                  <defs>
-                    <linearGradient id="starGrad" x1="0" y1="0" x2="36" y2="28">
-                      <stop offset="0%" stopColor="hsl(var(--primary))" />
-                      <stop offset="100%" stopColor="hsl(250, 80%, 58%)" />
-                    </linearGradient>
-                    <filter id="starGlow">
-                      <feGaussianBlur stdDeviation="2" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
                   <path
                     d="M18 0C18 6 13 9.5 8.5 11.5C4.5 13 1.5 13.5 0 14C1.5 14.5 4.5 15 8.5 16.5C13 18.5 18 22 18 28C18 22 23 18.5 27.5 16.5C31.5 15 34.5 14.5 36 14C34.5 13.5 31.5 13 27.5 11.5C23 9.5 18 6 18 0Z"
-                    fill="url(#starGrad)"
-                    filter="url(#starGlow)"
+                    fill="hsl(var(--primary))"
                   />
                 </svg>
               </motion.div>
