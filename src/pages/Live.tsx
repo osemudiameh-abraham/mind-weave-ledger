@@ -1,9 +1,10 @@
-import { motion } from "framer-motion";
-import { X, Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, Ear } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-
-const WAVEFORM_BARS = 48;
+import GlowOrb from "@/components/live/GlowOrb";
+import LiveControls from "@/components/live/LiveControls";
+import { Switch } from "@/components/ui/switch";
 
 const Live = () => {
   const navigate = useNavigate();
@@ -11,6 +12,7 @@ const Live = () => {
   const [cameraOn, setCameraOn] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [speaking, setSpeaking] = useState(false);
+  const [alwaysListening, setAlwaysListening] = useState(false);
   const [statusText, setStatusText] = useState("Listening…");
   const [transcript, setTranscript] = useState("");
 
@@ -25,11 +27,13 @@ const Live = () => {
     const cycle = () => {
       setSpeaking(true);
       setStatusText("Seven is speaking");
-      setTranscript("I notice you've been more consistent this week with your morning routine. Your energy scores have also improved.");
-      
+      setTranscript(
+        "I notice you've been more consistent this week with your morning routine. Your energy scores have also improved."
+      );
+
       const timeout1 = setTimeout(() => {
         setSpeaking(false);
-        setStatusText("Listening…");
+        setStatusText(alwaysListening ? "Always listening…" : "Listening…");
         setTranscript("");
       }, 5000);
 
@@ -46,7 +50,14 @@ const Live = () => {
     }, 3000);
 
     return () => clearTimeout(initial);
-  }, []);
+  }, [alwaysListening]);
+
+  // Update status text when always listening toggles
+  useEffect(() => {
+    if (!speaking) {
+      setStatusText(alwaysListening ? "Always listening…" : "Listening…");
+    }
+  }, [alwaysListening, speaking]);
 
   const formatTime = useCallback(
     (s: number) =>
@@ -57,11 +68,27 @@ const Live = () => {
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#1a1a2e] relative overflow-hidden">
-      {/* Subtle ambient gradient */}
-      <div className="absolute inset-0">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-primary/5 blur-[120px]" />
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[400px] h-[300px] rounded-full bg-primary/3 blur-[100px]" />
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="min-h-screen flex flex-col relative overflow-hidden"
+      style={{
+        background: "linear-gradient(180deg, hsl(220 20% 8%) 0%, hsl(225 25% 12%) 50%, hsl(220 20% 10%) 100%)",
+      }}
+    >
+      {/* Ambient background glow */}
+      <div className="absolute inset-0 pointer-events-none">
+        <motion.div
+          animate={{
+            opacity: speaking ? [0.08, 0.15, 0.08] : [0.03, 0.06, 0.03],
+          }}
+          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full"
+          style={{
+            background: "radial-gradient(circle, hsl(220 82% 60% / 0.4), hsl(262 83% 58% / 0.2), transparent 70%)",
+          }}
+        />
       </div>
 
       {/* Top bar */}
@@ -69,14 +96,14 @@ const Live = () => {
         <motion.button
           whileTap={{ scale: 0.9 }}
           onClick={() => navigate("/home")}
-          className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+          className="w-10 h-10 rounded-full bg-white/8 backdrop-blur-sm flex items-center justify-center"
         >
-          <X size={20} className="text-white/80" />
+          <X size={20} className="text-white/70" />
         </motion.button>
 
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-white/60 text-[13px] font-mono tracking-wider">
+          <span className="text-white/50 text-[13px] font-mono tracking-wider">
             {formatTime(elapsed)}
           </span>
         </div>
@@ -84,154 +111,97 @@ const Live = () => {
         <div className="w-10" />
       </div>
 
-      {/* Camera preview (when enabled) */}
-      {cameraOn && (
+      {/* Always Listening toggle */}
+      <div className="relative z-10 flex items-center justify-center mt-2 mb-4">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="relative z-10 mx-5 mt-2 mb-4"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="flex items-center gap-3 px-4 py-2 rounded-full bg-white/5 backdrop-blur-sm border border-white/10"
         >
-          <div className="w-full aspect-[4/3] rounded-3xl bg-gradient-to-br from-[#2a2a4a] to-[#1a1a3a] border border-white/10 flex items-center justify-center overflow-hidden">
-            {/* Simulated camera feed */}
-            <div className="relative w-full h-full">
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30" />
-              <div className="absolute top-4 left-4 px-3 py-1 rounded-full bg-black/40 backdrop-blur-sm">
-                <span className="text-white/70 text-[11px] font-medium">Camera</span>
-              </div>
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center">
-                  <Video size={32} className="text-white/40" />
-                </div>
+          <Ear size={16} className="text-white/50" />
+          <span className="text-[13px] text-white/60 font-medium">Always listening</span>
+          <Switch
+            checked={alwaysListening}
+            onCheckedChange={setAlwaysListening}
+            className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-white/20 scale-90"
+          />
+        </motion.div>
+      </div>
+
+      {/* Camera preview */}
+      <AnimatePresence>
+        {cameraOn && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="relative z-10 mx-5 mb-4 overflow-hidden"
+          >
+            <div className="w-full aspect-[4/3] rounded-3xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-white/10" />
               </div>
             </div>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Main content */}
+      {/* Main content — orb area */}
       <div className="flex-1 flex flex-col items-center justify-center relative z-10 px-6">
-        {/* Status */}
-        <motion.div
-          animate={{ opacity: 1 }}
-          className="mb-8 text-center"
-        >
+        {/* Status text */}
+        <AnimatePresence mode="wait">
           <motion.p
             key={statusText}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-white text-[20px] font-normal tracking-[-0.01em]"
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3 }}
+            className="text-white/90 text-[18px] font-normal tracking-[-0.01em] mb-10"
           >
             {statusText}
           </motion.p>
-        </motion.div>
+        </AnimatePresence>
 
-        {/* Waveform visualization */}
-        <div className="flex items-center justify-center gap-[2.5px] h-20 mb-8">
-          {Array.from({ length: WAVEFORM_BARS }).map((_, i) => {
-            const center = WAVEFORM_BARS / 2;
-            const distFromCenter = Math.abs(i - center) / center;
-            const maxHeight = speaking ? 64 - distFromCenter * 40 : 12 - distFromCenter * 6;
+        {/* Glowing orb */}
+        <GlowOrb speaking={speaking} listening={!muted} />
 
-            return (
+        {/* Transcript */}
+        <div className="mt-10 min-h-[80px] flex items-start justify-center">
+          <AnimatePresence>
+            {transcript ? (
               <motion.div
-                key={i}
-                animate={{
-                  height: speaking
-                    ? [
-                        4,
-                        Math.max(8, maxHeight * (0.5 + Math.random() * 0.5)),
-                        4,
-                        Math.max(6, maxHeight * (0.3 + Math.random() * 0.7)),
-                        4,
-                      ]
-                    : [4, Math.max(4, 8 - distFromCenter * 6), 4],
-                }}
-                transition={{
-                  duration: speaking ? 0.6 + Math.random() * 0.4 : 2 + Math.random() * 1,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: i * 0.015,
-                }}
-                className="w-[3px] rounded-full"
-                style={{
-                  background: speaking
-                    ? `linear-gradient(180deg, hsl(220, 82%, 65%) 0%, hsl(220, 82%, 46%) 100%)`
-                    : "rgba(255,255,255,0.25)",
-                  minHeight: 4,
-                }}
-              />
-            );
-          })}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="px-5 py-3.5 rounded-2xl bg-white/[0.06] backdrop-blur-sm max-w-xs text-center border border-white/[0.06]"
+              >
+                <p className="text-white/70 text-[14px] leading-relaxed">{transcript}</p>
+              </motion.div>
+            ) : !speaking ? (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.4 }}
+                className="text-white/40 text-[14px]"
+              >
+                {alwaysListening ? "I'm always here…" : "Say something to get started…"}
+              </motion.p>
+            ) : null}
+          </AnimatePresence>
         </div>
-
-        {/* Transcript bubble */}
-        {transcript && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="px-5 py-3.5 rounded-2xl bg-white/8 max-w-xs text-center mb-4"
-          >
-            <p className="text-white/70 text-[14px] leading-relaxed">{transcript}</p>
-          </motion.div>
-        )}
-
-        {/* Listening indicator */}
-        {!speaking && !transcript && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.5 }}
-            className="text-white/40 text-[14px] mb-4"
-          >
-            Say something to get started…
-          </motion.div>
-        )}
       </div>
 
       {/* Bottom controls */}
       <div className="relative z-10 pb-10 pt-4">
-        <div className="flex items-center justify-center gap-5">
-          {/* Mic toggle */}
-          <motion.button
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setMuted(!muted)}
-            className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
-              muted ? "bg-white/20" : "bg-white/10"
-            }`}
-          >
-            {muted ? (
-              <MicOff size={22} className="text-white/70" />
-            ) : (
-              <Mic size={22} className="text-white/70" />
-            )}
-          </motion.button>
-
-          {/* End call — red button */}
-          <motion.button
-            whileTap={{ scale: 0.9 }}
-            onClick={() => navigate("/home")}
-            className="w-[72px] h-[72px] rounded-full bg-destructive flex items-center justify-center shadow-lg shadow-destructive/30"
-          >
-            <div className="w-6 h-6 bg-white rounded-sm" />
-          </motion.button>
-
-          {/* Camera toggle */}
-          <motion.button
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setCameraOn(!cameraOn)}
-            className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
-              cameraOn ? "bg-primary/30" : "bg-white/10"
-            }`}
-          >
-            {cameraOn ? (
-              <Video size={22} className="text-white/70" />
-            ) : (
-              <VideoOff size={22} className="text-white/70" />
-            )}
-          </motion.button>
-        </div>
+        <LiveControls
+          muted={muted}
+          cameraOn={cameraOn}
+          onToggleMute={() => setMuted(!muted)}
+          onToggleCamera={() => setCameraOn(!cameraOn)}
+          onEnd={() => navigate("/home")}
+        />
       </div>
-    </div>
+    </motion.div>
   );
 };
 
