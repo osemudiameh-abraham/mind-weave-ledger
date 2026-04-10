@@ -40,7 +40,7 @@ const sections = [
     title: "Data & Privacy",
     items: [
       { icon: Database, label: "Export Data", desc: "Download all your data" },
-      { icon: Shield, label: "Privacy", desc: "Data handling, retention" },
+      { icon: Shield, label: "Privacy Policy", desc: "How we protect your data", path: "/privacy" },
       { icon: Trash2, label: "Delete Account", desc: "Permanently remove all data", danger: true },
     ],
   },
