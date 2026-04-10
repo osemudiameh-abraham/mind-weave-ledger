@@ -115,7 +115,7 @@ const Splash = () => {
         ) : null}
       </AnimatePresence>
 
-    </div>
+    </main>
   );
 };
 
