@@ -61,15 +61,15 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             </motion.button>
           ) : (
             <>
-              {onLive && (
-                <button
-                  onClick={onLive}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5"
-                  aria-label="Start voice mode"
-                >
-                  <Mic size={20} />
-                </button>
-              )}
+              <button
+                onClick={() => setRecording((r) => !r)}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors shrink-0 mb-0.5 ${
+                  recording ? "bg-destructive/15 text-destructive" : "text-muted-foreground hover:bg-muted"
+                }`}
+                aria-label={recording ? "Stop recording" : "Start recording"}
+              >
+                {recording ? <MicOff size={20} /> : <Mic size={20} />}
+              </button>
               {onLive && <LiveButton onClick={onLive} />}
             </>
           )}
