@@ -30,6 +30,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import SevenLogo from "./SevenLogo";
+import DevicePairingSheet from "./DevicePairingSheet";
 import type { Section } from "@/hooks/use-sections";
 
 interface SideMenuProps {
@@ -79,32 +80,53 @@ const SideMenu = ({
   const [editName, setEditName] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
-  const [connectedDevices, setConnectedDevices] = useState<string[]>(() => {
+  const [connectedDevices, setConnectedDevices] = useState<Record<string, string>>(() => {
     try {
-      return JSON.parse(localStorage.getItem("seven_connected_devices") || "[]");
+      return JSON.parse(localStorage.getItem("seven_connected_devices_v2") || "{}");
     } catch {
-      return [];
+      return {};
     }
   });
-  const [connectingDevice, setConnectingDevice] = useState<string | null>(null);
+  const [pairingCategory, setPairingCategory] = useState<string | null>(null);
+  const [pairingOpen, setPairingOpen] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem("seven_connected_devices", JSON.stringify(connectedDevices));
+    localStorage.setItem("seven_connected_devices_v2", JSON.stringify(connectedDevices));
   }, [connectedDevices]);
 
-  const handleDeviceToggle = (label: string) => {
-    if (connectedDevices.includes(label)) {
-      setConnectedDevices((prev) => prev.filter((d) => d !== label));
-      toast(`${label} disconnected`);
-    } else {
-      setConnectingDevice(label);
-      // Simulate pairing
-      setTimeout(() => {
-        setConnectedDevices((prev) => [...prev, label]);
-        setConnectingDevice(null);
-        toast.success(`${label} connected successfully`);
-      }, 1500);
-    }
+  const connectedIds = Object.keys(connectedDevices);
+
+  const getCategoryConnectedName = (category: string) => {
+    return Object.values(connectedDevices).find((name) => {
+      // Match by checking if this device belongs to the category
+      return connectedDevices[Object.keys(connectedDevices).find((id) => connectedDevices[id] === name) || ""] === name;
+    });
+  };
+
+  const isCategoryConnected = (category: string) => {
+    // Check if any connected device belongs to this category
+    return Object.entries(connectedDevices).some(([_, name]) => {
+      const categoryDevices = deviceTypes.find((d) => d.label === category);
+      return categoryDevices !== undefined && connectedDevices[Object.keys(connectedDevices).find((k) => connectedDevices[k] === name) || ""]?.length > 0;
+    });
+  };
+
+  const handleDeviceClick = (category: string) => {
+    setPairingCategory(category);
+    setPairingOpen(true);
+  };
+
+  const handleDeviceConnected = (deviceId: string, deviceName: string, _category: string) => {
+    setConnectedDevices((prev) => ({ ...prev, [deviceId]: deviceName }));
+  };
+
+  const handleDeviceDisconnected = (deviceId: string) => {
+    setConnectedDevices((prev) => {
+      const next = { ...prev };
+      delete next[deviceId];
+      return next;
+    });
+    toast(`Device disconnected`);
   };
 
   const handleNav = (path: string) => {
