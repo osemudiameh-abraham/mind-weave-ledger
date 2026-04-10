@@ -119,20 +119,6 @@ const Splash = () => {
         ) : null}
       </AnimatePresence>
 
-      {/* Bottom loading bar */}
-      <motion.div
-        className="absolute bottom-16 left-1/2 -translate-x-1/2 h-[2px] rounded-full bg-primary/20 overflow-hidden"
-        initial={{ width: 0, opacity: 0 }}
-        animate={{ width: 120, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.8 }}
-      >
-        <motion.div
-          className="h-full rounded-full bg-primary"
-          initial={{ width: "0%" }}
-          animate={{ width: "100%" }}
-          transition={{ duration: 1.8, delay: 0.9, ease: "easeInOut" }}
-        />
-      </motion.div>
     </div>
   );
 };

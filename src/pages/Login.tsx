@@ -128,11 +128,27 @@ const Login = () => {
         </motion.div>
 
         {/* Footer */}
+        {/* Sign up link */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.4 }}
+          className="text-center mt-8"
+        >
+          <span className="text-[13px] text-muted-foreground">Don't have an account? </span>
+          <button
+            onClick={() => navigate("/signup")}
+            className="text-[13px] text-primary font-medium hover:underline"
+          >
+            Sign up
+          </button>
+        </motion.p>
+
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.55, duration: 0.4 }}
-          className="text-[11px] text-muted-foreground text-center mt-12 leading-relaxed"
+          className="text-[11px] text-muted-foreground text-center mt-6 leading-relaxed"
         >
           By continuing, you agree to Seven's{" "}
           <span className="text-primary cursor-pointer">Terms</span> &{" "}
