@@ -1,32 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { TranscriptEntry } from "@/components/live/LiveTranscript";
+import type { LiveService, LiveMessage, LiveSessionStatus } from "@/services/live/types";
+import { MockLiveService } from "@/services/live/MockLiveService";
 
-// Simulated AI responses based on context
-const CAMERA_RESPONSES = [
-  "I can see what's in front of you. Would you like me to analyze anything specific?",
-  "Interesting — I'm noticing some details here. Want me to describe what I see?",
-  "I can help identify objects, read text, or give feedback on what you're showing me.",
-  "Got it. I'm looking at this now. Anything particular you'd like to know?",
-  "I see the scene clearly. I can provide context, identify items, or help with decisions.",
-];
-
-const SCREEN_SHARE_RESPONSES = [
-  "I can see your screen. Want me to help with what you're viewing?",
-  "I'm following along with your screen. Ask me anything about what's displayed.",
-  "I can read and analyze the content on your screen. What would you like to discuss?",
-  "Screen share is active. I can help navigate, explain, or provide feedback on the content.",
-];
-
-const GENERAL_RESPONSES = [
-  "I'm here and listening. What's on your mind?",
-  "Sure, I can help with that. Tell me more.",
-  "That's a great question. Let me think about that for you.",
-  "I understand. Here's what I'd suggest…",
-  "Absolutely — I can walk you through that step by step.",
-];
-
-const GREETING = "I'm ready. You can show me something with the camera, share your screen, or just talk.";
-
+/**
+ * Main Live session hook.
+ * 
+ * Uses a pluggable LiveService backend — currently MockLiveService.
+ * To connect your real backend:
+ * 1. Implement LiveService interface (see src/services/live/types.ts)
+ * 2. Replace MockLiveService with your implementation below
+ */
 export const useLiveSession = () => {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [cameraOn, setCameraOn] = useState(false);
@@ -35,102 +19,82 @@ export const useLiveSession = () => {
   const [alwaysListening, setAlwaysListening] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const [showTextInput, setShowTextInput] = useState(false);
-  const responseIndexRef = useRef(0);
-  const hasGreeted = useRef(false);
+  const [sessionStatus, setSessionStatus] = useState<LiveSessionStatus>("idle");
+  const [volumeLevel, setVolumeLevel] = useState(0);
 
-  // Simulate speaking pulse
+  const serviceRef = useRef<LiveService | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Initialize service on mount
   useEffect(() => {
-    if (!micOn || !alwaysListening) {
-      setSpeaking(false);
-      return;
-    }
-    const interval = setInterval(() => setSpeaking((c) => !c), 1600);
-    return () => clearInterval(interval);
-  }, [micOn, alwaysListening]);
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // BACKEND SWAP POINT: Replace MockLiveService 
+    // with your real service implementation here
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const service = new MockLiveService();
+    serviceRef.current = service;
 
-  // Greet on mount
+    service.connect({
+      onMessage: (msg: LiveMessage) => {
+        setTranscript((prev) => [
+          ...prev,
+          { id: msg.id, role: msg.role, text: msg.text },
+        ]);
+      },
+      onSpeakingChange: setSpeaking,
+      onError: (err) => console.error("[LiveSession]", err),
+      onStatusChange: setSessionStatus,
+    });
+
+    return () => {
+      service.disconnect();
+    };
+  }, []);
+
+  // Sync media state to service
   useEffect(() => {
-    if (!hasGreeted.current) {
-      hasGreeted.current = true;
-      setTimeout(() => {
-        addAIMessage(GREETING);
-      }, 800);
-    }
-  }, []);
-
-  const addAIMessage = useCallback((text: string) => {
-    setTranscript((prev) => [
-      ...prev,
-      { id: `ai-${Date.now()}`, role: "ai", text },
-    ]);
-  }, []);
-
-  const addUserMessage = useCallback((text: string) => {
-    setTranscript((prev) => [
-      ...prev,
-      { id: `user-${Date.now()}`, role: "user", text },
-    ]);
-  }, []);
-
-  const getResponse = useCallback((pool: string[]) => {
-    const idx = responseIndexRef.current % pool.length;
-    responseIndexRef.current++;
-    return pool[idx];
-  }, []);
-
-  const simulateAIResponse = useCallback(
-    (context: "camera" | "screen" | "general") => {
-      const pool =
-        context === "camera"
-          ? CAMERA_RESPONSES
-          : context === "screen"
-            ? SCREEN_SHARE_RESPONSES
-            : GENERAL_RESPONSES;
-
-      setTimeout(() => {
-        addAIMessage(getResponse(pool));
-      }, 1200 + Math.random() * 800);
-    },
-    [addAIMessage, getResponse],
-  );
+    serviceRef.current?.setMediaState({
+      camera: cameraOn,
+      screen: screenShareOn,
+      mic: micOn,
+    });
+  }, [cameraOn, screenShareOn, micOn]);
 
   const toggleCamera = useCallback(() => {
     setCameraOn((prev) => {
       const next = !prev;
-      if (next) {
-        setScreenShareOn(false);
-        setTimeout(() => simulateAIResponse("camera"), 1500);
-      }
+      if (next) setScreenShareOn(false);
       return next;
     });
-  }, [simulateAIResponse]);
+  }, []);
 
   const toggleScreenShare = useCallback(() => {
     setScreenShareOn((prev) => {
       const next = !prev;
-      if (next) {
-        setCameraOn(false);
-        setTimeout(() => simulateAIResponse("screen"), 1500);
-      }
+      if (next) setCameraOn(false);
       return next;
     });
-  }, [simulateAIResponse]);
+  }, []);
 
   const toggleMic = useCallback(() => {
     setMicOn((v) => !v);
   }, []);
 
-  const sendTextMessage = useCallback(
-    (text: string) => {
-      addUserMessage(text);
-      const context = cameraOn ? "camera" : screenShareOn ? "screen" : "general";
-      simulateAIResponse(context);
-    },
-    [addUserMessage, simulateAIResponse, cameraOn, screenShareOn],
-  );
+  const sendTextMessage = useCallback((text: string) => {
+    serviceRef.current?.sendText(text);
+  }, []);
 
   const handleScreenShareStopped = useCallback(() => {
     setScreenShareOn(false);
+  }, []);
+
+  const sendFrame = useCallback((base64: string) => {
+    serviceRef.current?.sendFrame(base64);
+  }, []);
+
+  const sendAudio = useCallback((data: Float32Array, sampleRate: number) => {
+    serviceRef.current?.sendAudio(data, sampleRate);
   }, []);
 
   const active = alwaysListening && micOn;
@@ -144,12 +108,19 @@ export const useLiveSession = () => {
     speaking,
     showTextInput,
     active,
+    sessionStatus,
+    volumeLevel,
+    videoRef,
+    screenVideoRef,
     toggleCamera,
     toggleScreenShare,
     toggleMic,
     setAlwaysListening,
     setShowTextInput,
+    setVolumeLevel,
     sendTextMessage,
     handleScreenShareStopped,
+    sendFrame,
+    sendAudio,
   };
 };

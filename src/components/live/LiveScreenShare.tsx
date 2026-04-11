@@ -5,10 +5,12 @@ interface LiveScreenShareProps {
   active: boolean;
   onStopped?: () => void;
   onError?: (msg: string) => void;
+  /** Expose video element ref for frame capture */
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
-const LiveScreenShare = ({ active, onStopped, onError }: LiveScreenShareProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
+const LiveScreenShare = ({ active, onStopped, onError, videoRef: externalVideoRef }: LiveScreenShareProps) => {
+  const internalVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
@@ -33,11 +35,11 @@ const LiveScreenShare = ({ active, onStopped, onError }: LiveScreenShareProps) =
         }
 
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        const vid = externalVideoRef?.current ?? internalVideoRef.current;
+        if (vid) {
+          vid.srcObject = stream;
         }
 
-        // Handle user stopping share via browser UI
         stream.getVideoTracks()[0]?.addEventListener("ended", () => {
           onStopped?.();
         });
@@ -67,14 +69,13 @@ const LiveScreenShare = ({ active, onStopped, onError }: LiveScreenShareProps) =
           className="absolute inset-0 z-[5] overflow-hidden bg-black"
         >
           <video
-            ref={videoRef}
+            ref={externalVideoRef ?? internalVideoRef}
             autoPlay
             playsInline
             muted
             className="h-full w-full object-contain"
           />
 
-          {/* Gradient overlay */}
           <div
             className="absolute inset-0"
             style={{
