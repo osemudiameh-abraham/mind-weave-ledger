@@ -121,7 +121,7 @@ const Home = () => {
         onMarkAllSeen={markAllSeen}
       />
 
-      <div className="pt-14 pb-32 px-4 max-w-lg mx-auto">
+      <div className="pt-14 pb-32 px-4 max-w-2xl mx-auto">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh]">
             <motion.div
