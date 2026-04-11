@@ -1,5 +1,5 @@
-import { Menu } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Menu, ArrowLeft } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 import SevenLogo from "./SevenLogo";
 import RemindersSheet from "./RemindersSheet";
 import type { Reminder } from "@/hooks/use-reminders";
@@ -15,16 +15,29 @@ interface TopNavProps {
 
 const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDismissReminder, onMarkAllSeen }: TopNavProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const mainPages = ["/home", "/reviews", "/vault", "/trace", "/digest"];
+  const isSubPage = !mainPages.includes(location.pathname);
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 bg-background">
       <div className="flex items-center justify-between px-4 h-14">
-        <button
-          onClick={onMenuClick}
-          className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
-        >
-          <Menu size={22} className="text-foreground/70" />
-        </button>
+        {isSubPage ? (
+          <button
+            onClick={() => navigate(-1)}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+          >
+            <ArrowLeft size={22} className="text-foreground/70" />
+          </button>
+        ) : (
+          <button
+            onClick={onMenuClick}
+            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+          >
+            <Menu size={22} className="text-foreground/70" />
+          </button>
+        )}
 
         <button
           onClick={() => navigate("/home")}

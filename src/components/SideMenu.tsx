@@ -152,11 +152,12 @@ const SideMenu = ({
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 Sections
               </p>
-              <button
-                onClick={() => {
-                  onNewSection?.();
-                  onOpenChange(false);
-                }}
+                <button
+                  onClick={() => {
+                    onNewSection?.();
+                    onOpenChange(false);
+                    if (location.pathname !== "/home") navigate("/home");
+                  }}
                 className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-muted transition-colors"
               >
                 <Plus size={14} className="text-muted-foreground" />
@@ -167,11 +168,12 @@ const SideMenu = ({
             </p>
 
             {visibleSections.length === 0 && (
-              <button
-                onClick={() => {
-                  onNewSection?.();
-                  onOpenChange(false);
-                }}
+                <button
+                  onClick={() => {
+                    onNewSection?.();
+                    onOpenChange(false);
+                    if (location.pathname !== "/home") navigate("/home");
+                  }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted transition-colors text-muted-foreground"
               >
                 <Plus size={16} />
@@ -199,6 +201,7 @@ const SideMenu = ({
                       onClick={() => {
                         onSelectSection?.(section.id);
                         onOpenChange(false);
+                        if (location.pathname !== "/home") navigate("/home");
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${
                         active ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"
@@ -267,6 +270,7 @@ const SideMenu = ({
                     onClick={() => {
                       onSelectSection?.(section.id);
                       onOpenChange(false);
+                      if (location.pathname !== "/home") navigate("/home");
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-foreground hover:bg-muted transition-colors"
                   >

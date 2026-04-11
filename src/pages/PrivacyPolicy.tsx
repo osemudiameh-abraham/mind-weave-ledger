@@ -1,11 +1,8 @@
 import { motion } from "framer-motion";
-import { ArrowLeft, Shield, Lock, Eye, Trash2, Download, Mail } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Shield, Lock, Eye, Trash2, Download, Mail } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 
 const PrivacyPolicy = () => {
-  const navigate = useNavigate();
-
   return (
     <AppLayout>
       <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
@@ -15,13 +12,6 @@ const PrivacyPolicy = () => {
           animate={{ opacity: 1, y: 0 }}
           className="mt-2 mb-6"
         >
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors mb-4"
-          >
-            <ArrowLeft size={16} />
-            Back
-          </button>
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
               <Shield size={20} className="text-primary" />
