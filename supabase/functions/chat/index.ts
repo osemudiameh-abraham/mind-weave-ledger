@@ -234,10 +234,9 @@ When you have relevant context about the user, USE IT naturally. Reference their
       content: assistantContent,
     });
 
-    // ─── Store memory with embedding ───
-    const factSignals = /\b(my name|i am|i live|i work|i'm|i have|i moved|i started|i decided|i want|i need|i feel|i prefer|i always|i never|i plan)\b/i;
-    if (factSignals.test(message)) {
-      // Tier 3 — LLM extraction
+    // ─── Extract facts from EVERY message — cognitive continuity means never missing a fact ───
+    {
+      // LLM extraction on every message (gpt-4o-mini, ~$0.001 per call)
       try {
         const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
@@ -247,7 +246,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
             messages: [
               {
                 role: "system",
-                content: `Extract factual claims from the user message. Return a JSON array of objects with: subject, attribute, value, category (one of: identity, work, values, goals, patterns, relationships, preferences, general). Only extract clear factual statements. If none, return []. Return ONLY valid JSON, no markdown.`,
+                content: `Extract ALL factual claims, preferences, opinions, dislikes, habits, and personal information from the user message. Return a JSON array of objects with: subject, attribute, value, category (one of: identity, work, values, goals, patterns, relationships, preferences, dislikes, habits, general). Extract things like "I don't like X", "I prefer Y", "I hate Z", "I love W", "I'm allergic to", "I avoid", etc. If the message contains no extractable facts or preferences, return []. Return ONLY valid JSON, no markdown.`,
               },
               { role: "user", content: message },
             ],
@@ -291,7 +290,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
       user_id: user.id,
       content: message,
       memory_type: "chat",
-      importance: factSignals.test(message) ? 7 : 3,
+      importance: 5,
       source: "chat",
       source_message_id: crypto.randomUUID(),
       embedding: queryEmbedding,
