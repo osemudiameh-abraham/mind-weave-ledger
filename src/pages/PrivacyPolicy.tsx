@@ -5,7 +5,7 @@ import AppLayout from "@/components/AppLayout";
 const PrivacyPolicy = () => {
   return (
     <AppLayout>
-      <div className="pt-14 pb-24 px-4 max-w-5xl mx-auto">
+      <div className="pt-14 pb-24 px-4 max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}

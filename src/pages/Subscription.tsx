@@ -31,7 +31,7 @@ const Subscription = () => {
 
   return (
     <AppLayout>
-      <div className="pt-16 pb-28 px-4 max-w-5xl mx-auto">
+      <div className="pt-16 pb-28 px-4 max-w-7xl mx-auto">
         {/* Trial status banner */}
         {isTrialActive && (
           <motion.div
