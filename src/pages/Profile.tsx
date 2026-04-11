@@ -274,6 +274,24 @@ const Profile = () => {
         <SheetContent side="bottom" className="rounded-t-2xl pb-8">
           <SheetHeader><SheetTitle>Edit Profile</SheetTitle></SheetHeader>
           <div className="space-y-4 mt-4">
+            {/* Avatar upload */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative">
+                {(editAvatarPreview || avatarUrl) ? (
+                  <img src={editAvatarPreview || avatarUrl!} alt="Profile" className="w-20 h-20 rounded-full object-cover" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-2xl">
+                    {editName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-md">
+                  <Camera size={14} className="text-primary-foreground" />
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Tap camera to change photo</p>
+            </div>
             <div>
               <label className="text-[12px] text-muted-foreground mb-1 block">Name</label>
               <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Your name" />
