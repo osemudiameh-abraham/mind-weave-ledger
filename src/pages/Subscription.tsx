@@ -1,7 +1,10 @@
 import { motion } from "framer-motion";
-import { Check, Crown, Sparkles } from "lucide-react";
+import { Check, Crown, Sparkles, Clock } from "lucide-react";
 import { useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import { useTrialStatus } from "@/hooks/use-trial-status";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const features = [
   "Unlimited conversations",
@@ -17,17 +20,60 @@ const features = [
 
 const Subscription = () => {
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
+  const { isTrialActive, isTrialExpired, daysRemaining, startTrial } = useTrialStatus();
+  const navigate = useNavigate();
+
+  const handleStartTrial = () => {
+    startTrial();
+    toast.success("Your 14-day free trial has started!");
+    navigate("/home");
+  };
 
   return (
     <AppLayout>
       <div className="pt-16 pb-28 px-4 max-w-lg mx-auto">
+        {/* Trial status banner */}
+        {isTrialActive && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-center gap-3 p-4 rounded-2xl bg-primary/10 border border-primary/20"
+          >
+            <Clock size={20} className="text-primary shrink-0" />
+            <div>
+              <p className="text-[14px] font-medium text-foreground">{daysRemaining} days remaining</p>
+              <p className="text-[12px] text-muted-foreground">Your free trial is active</p>
+            </div>
+          </motion.div>
+        )}
+
+        {isTrialExpired && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-center gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20"
+          >
+            <Clock size={20} className="text-destructive shrink-0" />
+            <div>
+              <p className="text-[14px] font-medium text-foreground">Trial ended</p>
+              <p className="text-[12px] text-muted-foreground">Subscribe to keep full access</p>
+            </div>
+          </motion.div>
+        )}
+
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <Crown size={24} className="text-primary" />
           </div>
-          <h1 className="text-[24px] font-semibold text-foreground tracking-tight">Unlock Seven</h1>
+          <h1 className="text-[24px] font-semibold text-foreground tracking-tight">
+            {isTrialActive ? "You're on Seven Pro" : isTrialExpired ? "Continue with Seven" : "Unlock Seven"}
+          </h1>
           <p className="text-[14px] text-muted-foreground mt-2 max-w-[280px] mx-auto leading-relaxed">
-            Start with 14 days free. Full access, no card required.
+            {isTrialActive
+              ? "Enjoying full access. Subscribe anytime to keep it."
+              : isTrialExpired
+              ? "Your trial has ended. Subscribe to keep all features."
+              : "Start with 14 days free. Full access, no card required."}
           </p>
         </motion.div>
 
@@ -98,12 +144,15 @@ const Subscription = () => {
             ))}
           </div>
 
-          <button className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground text-[14px] font-medium hover:bg-primary/90 transition-colors">
-            Start 14-Day Free Trial
+          <button
+            onClick={isTrialActive ? undefined : isTrialExpired ? undefined : handleStartTrial}
+            className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground text-[14px] font-medium hover:bg-primary/90 transition-colors"
+          >
+            {isTrialActive ? "Subscribe Now" : isTrialExpired ? "Subscribe Now" : "Start 14-Day Free Trial"}
           </button>
 
           <p className="text-[11px] text-muted-foreground text-center mt-3">
-            No credit card required · Cancel anytime
+            {isTrialActive || isTrialExpired ? "Secure payment · Cancel anytime" : "No credit card required · Cancel anytime"}
           </p>
         </motion.div>
 
