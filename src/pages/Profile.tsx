@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
-import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Download, Trash2, X, Check } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Download, Trash2, X, Check, Camera } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { toast } from "sonner";
