@@ -27,7 +27,7 @@ const Onboarding = () => {
   const next = async () => {
     if (step === 1 && name.trim()) {
       localStorage.setItem("seven_user_name", name.trim());
-      await updateProfile({ name: name.trim() });
+      updateProfile({ name: name.trim() }).catch(() => {});
     }
     if (step === 5 && safeWord.trim()) {
       localStorage.setItem("seven_safe_word", safeWord.trim());
@@ -36,14 +36,14 @@ const Onboarding = () => {
     else {
       // Save all onboarding data to Supabase
       if (user) {
-        await supabase.from("identity_profiles").update({
+        supabase.from("identity_profiles").update({
           self_name: name.trim() || undefined,
           goals: goals,
           focus_areas: selected,
           safe_word: safeWord.trim() || undefined,
         }).eq("user_id", user.id);
       }
-      await completeOnboarding();
+      completeOnboarding().catch(() => {});
       navigate("/home", { replace: true });
     }
   };
