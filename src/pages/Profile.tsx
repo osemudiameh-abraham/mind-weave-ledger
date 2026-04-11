@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
-import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Download, Trash2, X, Check } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Download, Trash2, X, Check, Camera } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { toast } from "sonner";
@@ -47,6 +47,9 @@ const Profile = () => {
   const [editEmail, setEditEmail] = useState(saved?.userEmail ?? "user@example.com");
   const [userName, setUserName] = useState(saved?.userName ?? "User");
   const [userEmail, setUserEmail] = useState(saved?.userEmail ?? "user@example.com");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(saved?.avatarUrl ?? null);
+  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Checkin options
   const checkinOptions = ["Daily, Morning", "Daily, Evening", "Weekdays Only", "Weekly, Monday", "Custom"];
@@ -65,10 +68,10 @@ const Profile = () => {
     const prefs = {
       trackDecisions, trackHabits, trackPatterns, trackGoals,
       checkinSchedule, remindersEnabled, governanceRules: rules.filter(r => r.enabled).length,
-      appearance, userName, userEmail, rules,
+      appearance, userName, userEmail, rules, avatarUrl,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  }, [trackDecisions, trackHabits, trackPatterns, trackGoals, checkinSchedule, remindersEnabled, appearance, userName, userEmail, rules]);
+  }, [trackDecisions, trackHabits, trackPatterns, trackGoals, checkinSchedule, remindersEnabled, appearance, userName, userEmail, rules, avatarUrl]);
 
   // Apply theme
   useEffect(() => {
@@ -121,6 +124,26 @@ const Profile = () => {
     navigate("/login");
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      setEditAvatarPreview(result);
+    };
+    reader.onerror = () => toast.error("Failed to read image");
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveProfile = () => {
     if (!editName.trim() || !editEmail.trim()) {
       toast.error("Name and email are required");
@@ -128,7 +151,11 @@ const Profile = () => {
     }
     setUserName(editName.trim());
     setUserEmail(editEmail.trim());
+    if (editAvatarPreview) {
+      setAvatarUrl(editAvatarPreview);
+    }
     setEditSheet(false);
+    setEditAvatarPreview(null);
     toast.success("Profile updated");
   };
 
@@ -183,8 +210,18 @@ const Profile = () => {
       <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
           className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border mt-4 mb-6">
-          <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-lg">
-            {userName.charAt(0).toUpperCase()}
+          <div className="relative">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profile" className="w-14 h-14 rounded-full object-cover" />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-lg">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <button onClick={() => { setEditName(userName); setEditEmail(userEmail); setEditAvatarPreview(null); setEditSheet(true); }}
+              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-md">
+              <Camera size={12} className="text-primary-foreground" />
+            </button>
           </div>
           <div className="flex-1">
             <h2 className="text-[16px] font-medium text-foreground">{userName}</h2>
@@ -237,6 +274,24 @@ const Profile = () => {
         <SheetContent side="bottom" className="rounded-t-2xl pb-8">
           <SheetHeader><SheetTitle>Edit Profile</SheetTitle></SheetHeader>
           <div className="space-y-4 mt-4">
+            {/* Avatar upload */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative">
+                {(editAvatarPreview || avatarUrl) ? (
+                  <img src={editAvatarPreview || avatarUrl!} alt="Profile" className="w-20 h-20 rounded-full object-cover" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-2xl">
+                    {editName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-md">
+                  <Camera size={14} className="text-primary-foreground" />
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Tap camera to change photo</p>
+            </div>
             <div>
               <label className="text-[12px] text-muted-foreground mb-1 block">Name</label>
               <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Your name" />
