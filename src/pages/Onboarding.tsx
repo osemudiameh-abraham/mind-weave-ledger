@@ -6,6 +6,7 @@ import SevenLogo from "@/components/SevenLogo";
 import { useAuth } from "@/contexts/AuthContext";
 
 const Onboarding = () => {
+  const { completeOnboarding, updateProfile } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
