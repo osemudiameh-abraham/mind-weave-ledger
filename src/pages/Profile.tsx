@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
 import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Download, Trash2, X, Check, Camera } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
@@ -19,6 +20,7 @@ const loadPrefs = () => {
 
 const Profile = () => {
   const navigate = useNavigate();
+  const auth = useAuth();
   const saved = loadPrefs();
 
   const [trackDecisions, setTrackDecisions] = useState(saved?.trackDecisions ?? true);
@@ -262,7 +264,7 @@ const Profile = () => {
         ))}
 
         <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} whileTap={{ scale: 0.98 }}
-          onClick={() => { localStorage.removeItem(STORAGE_KEY); toast.success("Signed out"); navigate("/login"); }}
+          onClick={() => { auth.signOut(); toast.success("Signed out"); navigate("/login"); }}
           className="w-full flex items-center justify-center gap-2 h-12 rounded-full text-destructive text-[14px] font-medium bg-card border border-border hover:shadow-sm transition-all duration-200">
           <LogOut size={16} />
           Sign out

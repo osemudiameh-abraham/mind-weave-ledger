@@ -1,17 +1,52 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 const Login = () => {
   const navigate = useNavigate();
+  const { signIn, isAuthenticated, user } = useAuth();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState<"google" | "apple" | "email" | null>(null);
+  const [error, setError] = useState("");
 
-  const handleAuth = (method: "google" | "apple" | "email") => {
-    if (method === "email" && !email.trim()) return;
+  // If already authenticated, redirect
+  if (isAuthenticated && user?.onboardingComplete) {
+    navigate("/home", { replace: true });
+    return null;
+  }
+
+  const handleEmailLogin = () => {
+    if (!email.trim() || !password.trim()) {
+      setError("Please enter both email and password");
+      return;
+    }
+    setLoading("email");
+    setError("");
+
+    setTimeout(() => {
+      const result = signIn(email, password);
+      setLoading(null);
+      if (result.success) {
+        if (result.needsVerification) {
+          navigate("/verify", { replace: true });
+        } else {
+          navigate("/home", { replace: true });
+        }
+      } else {
+        setError(result.error || "Login failed");
+      }
+    }, 800);
+  };
+
+  const handleSocialAuth = (method: "google" | "apple") => {
     setLoading(method);
-    setTimeout(() => { setLoading(null); navigate("/onboarding"); }, 1200);
+    toast("Social login will be available when backend is connected", { duration: 3000 });
+    setTimeout(() => setLoading(null), 1500);
   };
 
   return (
@@ -40,16 +75,15 @@ const Login = () => {
           </span>
         </motion.div>
 
-        {/* Auth buttons */}
+        {/* Social auth */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.25 }}
           className="w-full space-y-3"
         >
-          {/* Google */}
           <button
-            onClick={() => handleAuth("google")}
+            onClick={() => handleSocialAuth("google")}
             disabled={!!loading}
             className="w-full flex items-center justify-center gap-3 h-[50px] rounded-full bg-card border border-border text-foreground text-[15px] font-medium hover:bg-surface-hover active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
           >
@@ -68,9 +102,8 @@ const Login = () => {
             )}
           </button>
 
-          {/* Apple */}
           <button
-            onClick={() => handleAuth("apple")}
+            onClick={() => handleSocialAuth("apple")}
             disabled={!!loading}
             className="w-full flex items-center justify-center gap-3 h-[50px] rounded-full bg-foreground text-background text-[15px] font-medium hover:opacity-90 active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
           >
@@ -99,7 +132,7 @@ const Login = () => {
           <div className="flex-1 h-px bg-border" />
         </motion.div>
 
-        {/* Email */}
+        {/* Email + Password */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -109,25 +142,50 @@ const Login = () => {
           <input
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAuth("email")}
+            onChange={(e) => { setEmail(e.target.value); setError(""); }}
             placeholder="Email address"
             className="w-full bg-card rounded-full px-5 h-[50px] text-[15px] text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all duration-200"
           />
+          <div className="relative">
+            <input
+              type={showPw ? "text" : "password"}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleEmailLogin()}
+              placeholder="Password"
+              className="w-full bg-card rounded-full px-5 h-[50px] text-[15px] text-foreground placeholder:text-muted-foreground outline-none border border-border focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all duration-200 pr-12"
+            />
+            <button
+              onClick={() => setShowPw(!showPw)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-[12px] text-destructive px-2"
+            >
+              {error}
+            </motion.p>
+          )}
+
           <button
-            onClick={() => handleAuth("email")}
-            disabled={!!loading || !email.trim()}
+            onClick={handleEmailLogin}
+            disabled={!!loading || !email.trim() || !password.trim()}
             className="w-full h-[50px] rounded-full bg-primary text-primary-foreground font-medium text-[15px] active:scale-[0.98] transition-all duration-150 disabled:opacity-35"
           >
             {loading === "email" ? (
               <Loader2 size={18} className="animate-spin mx-auto" />
             ) : (
-              "Continue"
+              "Sign in"
             )}
           </button>
         </motion.div>
 
-        {/* Footer */}
         {/* Sign up link */}
         <motion.p
           initial={{ opacity: 0 }}

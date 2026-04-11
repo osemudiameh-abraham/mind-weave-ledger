@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
 import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
 import {
   User,
@@ -45,6 +46,7 @@ type ThemeMode = "light" | "dark" | "system";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const auth = useAuth();
   const { enabled: alwaysListeningEnabled, setEnabled: setAlwaysListeningEnabled, wakeWord } = useAlwaysListening();
 
   // Toggles
@@ -149,17 +151,17 @@ const Settings = () => {
 
   const handleDeleteAccount = () => {
     if (deleteConfirmText !== "DELETE") return;
-    localStorage.clear();
+    auth.deleteAccount();
     toast("Account deleted. Redirecting…");
     setDeleteDialogOpen(false);
-    setTimeout(() => navigate("/"), 1000);
+    setTimeout(() => navigate("/login"), 1000);
   };
 
   const handleSignOut = () => {
-    localStorage.clear();
+    auth.signOut();
     toast("Signed out");
     setSignOutDialogOpen(false);
-    navigate("/");
+    navigate("/login", { replace: true });
   };
 
   const themeLabel = theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
