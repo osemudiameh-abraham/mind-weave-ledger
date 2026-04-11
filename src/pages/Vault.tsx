@@ -59,7 +59,7 @@ const Vault = () => {
 
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
+      <div className="pt-16 pb-24 px-4 max-w-5xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

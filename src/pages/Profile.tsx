@@ -209,7 +209,7 @@ const Profile = () => {
 
   return (
     <AppLayout>
-      <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
+      <div className="pt-14 pb-24 px-4 max-w-5xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
           className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border mt-4 mb-6">
           <div className="relative">
