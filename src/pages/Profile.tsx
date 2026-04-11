@@ -47,6 +47,9 @@ const Profile = () => {
   const [editEmail, setEditEmail] = useState(saved?.userEmail ?? "user@example.com");
   const [userName, setUserName] = useState(saved?.userName ?? "User");
   const [userEmail, setUserEmail] = useState(saved?.userEmail ?? "user@example.com");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(saved?.avatarUrl ?? null);
+  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Checkin options
   const checkinOptions = ["Daily, Morning", "Daily, Evening", "Weekdays Only", "Weekly, Monday", "Custom"];
