@@ -25,12 +25,16 @@ const Onboarding = () => {
   const next = () => {
     if (step === 1 && name.trim()) {
       localStorage.setItem("seven_user_name", name.trim());
+      updateProfile({ name: name.trim() });
     }
     if (step === 5 && safeWord.trim()) {
       localStorage.setItem("seven_safe_word", safeWord.trim());
     }
     if (step < totalSteps) setStep(step + 1);
-    else navigate("/home");
+    else {
+      completeOnboarding();
+      navigate("/home", { replace: true });
+    }
   };
   const back = () => step > 0 && setStep(step - 1);
 
