@@ -46,6 +46,7 @@ type ThemeMode = "light" | "dark" | "system";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const auth = useAuth();
   const { enabled: alwaysListeningEnabled, setEnabled: setAlwaysListeningEnabled, wakeWord } = useAlwaysListening();
 
   // Toggles
