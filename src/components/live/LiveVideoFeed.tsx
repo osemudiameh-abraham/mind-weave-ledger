@@ -1,16 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SwitchCamera } from "lucide-react";
 
 interface LiveVideoFeedProps {
   active: boolean;
   onError?: (msg: string) => void;
+  /** Expose video element ref for frame capture */
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
-const LiveVideoFeed = ({ active, onError }: LiveVideoFeedProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
+const LiveVideoFeed = ({ active, onError, videoRef: externalVideoRef }: LiveVideoFeedProps) => {
+  const internalVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
+
+  // Use external ref if provided, otherwise internal
+  const videoElement = externalVideoRef?.current ?? internalVideoRef.current;
 
   useEffect(() => {
     if (!active) {
@@ -23,7 +28,6 @@ const LiveVideoFeed = ({ active, onError }: LiveVideoFeedProps) => {
 
     const startCamera = async () => {
       try {
-        // Stop previous stream
         streamRef.current?.getTracks().forEach((t) => t.stop());
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -37,8 +41,9 @@ const LiveVideoFeed = ({ active, onError }: LiveVideoFeedProps) => {
         }
 
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        const vid = externalVideoRef?.current ?? internalVideoRef.current;
+        if (vid) {
+          vid.srcObject = stream;
         }
       } catch {
         onError?.("Camera access denied");
@@ -69,14 +74,13 @@ const LiveVideoFeed = ({ active, onError }: LiveVideoFeedProps) => {
           className="absolute inset-0 z-[5] overflow-hidden"
         >
           <video
-            ref={videoRef}
+            ref={externalVideoRef ?? internalVideoRef}
             autoPlay
             playsInline
             muted
             className="h-full w-full object-cover"
           />
 
-          {/* Gradient overlay for readability */}
           <div
             className="absolute inset-0"
             style={{
@@ -85,7 +89,6 @@ const LiveVideoFeed = ({ active, onError }: LiveVideoFeedProps) => {
             }}
           />
 
-          {/* Switch camera button */}
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={toggleCamera}
