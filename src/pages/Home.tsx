@@ -121,7 +121,7 @@ const Home = () => {
         onMarkAllSeen={markAllSeen}
       />
 
-      <div className="pt-14 pb-32 px-4 max-w-2xl mx-auto">
+      <div className="pt-14 pb-32 px-4 max-w-3xl mx-auto">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh]">
             <motion.div
@@ -165,7 +165,7 @@ const Home = () => {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.4 }}
-              className="flex gap-2 overflow-x-auto no-scrollbar mt-8 -mx-4 px-4 w-screen max-w-lg"
+              className="flex gap-2 overflow-x-auto no-scrollbar mt-8 -mx-4 px-4 w-screen max-w-3xl"
             >
               {suggestions.map((s, i) => (
                 <button
