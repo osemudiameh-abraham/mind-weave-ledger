@@ -51,7 +51,7 @@ const Library = () => {
 
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-7xl mx-auto">
+      <div className="pt-16 pb-24 px-4 max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-5">
           <h1 className="text-[22px] font-medium text-foreground tracking-tight">Library</h1>
           <p className="text-[14px] text-muted-foreground mt-1">All your past conversations</p>

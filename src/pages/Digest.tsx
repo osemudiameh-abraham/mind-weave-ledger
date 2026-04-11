@@ -40,7 +40,7 @@ const Digest = () => {
 
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-7xl mx-auto">
+      <div className="pt-16 pb-24 px-4 max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <p className="text-[12px] font-medium text-primary mb-1">WEEKLY DIGEST</p>
           <h1 className="text-[22px] font-medium text-foreground tracking-tight">{weekStart} – {weekEnd}</h1>
