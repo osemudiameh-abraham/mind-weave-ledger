@@ -6,6 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ─── Generate embedding via OpenAI ───
+async function embed(text: string, apiKey: string): Promise<number[] | null> {
+  try {
+    const res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: "text-embedding-3-large", input: text.slice(0, 8000) }),
+    });
+    const data = await res.json();
+    return data.data?.[0]?.embedding || null;
+  } catch { return null; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -33,6 +46,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "No message" }), { status: 400, headers: corsHeaders });
     }
 
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openaiKey) {
+      return new Response(JSON.stringify({ error: "OpenAI not configured" }), { status: 500, headers: corsHeaders });
+    }
+
     // ─── Ensure conversation exists ───
     let convoId = section_id;
     if (!convoId) {
@@ -53,9 +71,11 @@ serve(async (req) => {
       content: message,
     });
 
+    // ─── Generate embedding for user message (non-blocking start) ───
+    const embeddingPromise = embed(message, openaiKey);
+
     // ─── Fetch context layers in parallel ───
     const [factsRes, decisionsRes, patternsRes, identityRes, recentMemsRes, historyRes] = await Promise.all([
-      // 1. Canonical facts (active)
       supabase
         .from("memory_facts")
         .select("subject, attribute, value, category, confidence")
@@ -63,7 +83,6 @@ serve(async (req) => {
         .is("valid_until", null)
         .order("created_at", { ascending: false })
         .limit(50),
-      // 2. Active decisions
       supabase
         .from("decisions")
         .select("title, context_summary, confidence, status, review_due_at, created_at")
@@ -71,20 +90,17 @@ serve(async (req) => {
         .in("status", ["active", "pending_review"])
         .order("created_at", { ascending: false })
         .limit(10),
-      // 3. Behaviour patterns
       supabase
         .from("behaviour_patterns")
         .select("pattern_type, description, evidence_count, confidence")
         .eq("user_id", user.id)
         .order("confidence", { ascending: false })
         .limit(10),
-      // 4. Identity profile
       supabase
         .from("identity_profiles")
         .select("self_name, self_role, self_company, self_city, goals, focus_areas")
         .eq("user_id", user.id)
         .maybeSingle(),
-      // 5. Recent important memories
       supabase
         .from("memories_structured")
         .select("content, memory_type, importance, captured_at")
@@ -92,7 +108,6 @@ serve(async (req) => {
         .order("importance", { ascending: false })
         .order("captured_at", { ascending: false })
         .limit(20),
-      // 6. Recent conversation history
       supabase
         .from("messages")
         .select("role, content")
@@ -107,6 +122,22 @@ serve(async (req) => {
     const identity = identityRes.data;
     const recentMems = recentMemsRes.data || [];
     const history = historyRes.data || [];
+
+    // ─── Semantic memory search (wait for embedding) ───
+    const queryEmbedding = await embeddingPromise;
+    let semanticMems: { content: string; memory_type: string; similarity: number }[] = [];
+
+    if (queryEmbedding) {
+      try {
+        const { data: matchData } = await supabase.rpc("match_memories", {
+          query_embedding: queryEmbedding,
+          match_user_id: user.id,
+          match_count: 10,
+          match_threshold: 0.3,
+        });
+        semanticMems = matchData || [];
+      } catch { /* semantic search failure is non-fatal */ }
+    }
 
     // ─── Assemble system prompt (facts in SYSTEM, never in user message) ───
     let systemPrompt = `You are Seven Mynd — a cognitive continuity system. You are NOT a generic chatbot. You remember everything the user tells you, track their decisions, detect patterns in their behaviour, and help them make better decisions over time.
@@ -150,6 +181,12 @@ When you have relevant context about the user, USE IT naturally. Reference their
       systemPrompt += `\n\n## DETECTED BEHAVIOUR PATTERNS\nUse these to warn or guide the user when relevant:\n${patternLines.join("\n")}`;
     }
 
+    // Semantically relevant memories (NEW — vector search results)
+    if (semanticMems.length > 0) {
+      const semLines = semanticMems.map((m) => `- [${m.memory_type}] ${m.content} (relevance: ${(m.similarity * 100).toFixed(0)}%)`);
+      systemPrompt += `\n\n## RELEVANT MEMORIES (semantically matched to current query)\n${semLines.join("\n")}`;
+    }
+
     // Recent memories
     if (recentMems.length > 0) {
       const memLines = recentMems.map((m) => `- [${m.memory_type}] ${m.content}`);
@@ -161,7 +198,6 @@ When you have relevant context about the user, USE IT naturally. Reference their
       { role: "system", content: systemPrompt },
     ];
 
-    // Add conversation history (excluding the message we just stored)
     for (const msg of history) {
       if (msg.role === "user" && msg.content === message) continue;
       openaiMessages.push({
@@ -170,15 +206,9 @@ When you have relevant context about the user, USE IT naturally. Reference their
       });
     }
 
-    // Current user message (standalone — facts are in system, not here)
     openaiMessages.push({ role: "user", content: message });
 
     // ─── Call OpenAI ───
-    const openaiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openaiKey) {
-      return new Response(JSON.stringify({ error: "OpenAI not configured" }), { status: 500, headers: corsHeaders });
-    }
-
     const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -204,17 +234,14 @@ When you have relevant context about the user, USE IT naturally. Reference their
       content: assistantContent,
     });
 
-    // ─── Memory extraction (Tier 1 — heuristic gate) ───
+    // ─── Store memory with embedding ───
     const factSignals = /\b(my name|i am|i live|i work|i'm|i have|i moved|i started|i decided|i want|i need|i feel|i prefer|i always|i never|i plan)\b/i;
     if (factSignals.test(message)) {
-      // Tier 3 — LLM extraction (only the message text, no user ID)
+      // Tier 3 — LLM extraction
       try {
         const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${openaiKey}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
           body: JSON.stringify({
             model: "gpt-4o-mini",
             messages: [
@@ -237,7 +264,6 @@ When you have relevant context about the user, USE IT naturally. Reference their
         if (Array.isArray(extractedFacts)) {
           for (const fact of extractedFacts) {
             if (fact.subject && fact.attribute && fact.value) {
-              // Supersede any existing fact with same subject+attribute
               await supabase
                 .from("memory_facts")
                 .update({ valid_until: new Date().toISOString() })
@@ -257,20 +283,19 @@ When you have relevant context about the user, USE IT naturally. Reference their
             }
           }
         }
-      } catch {
-        // Extraction failure is non-fatal
-      }
-
-      // Also store as raw memory
-      await supabase.from("memories_structured").insert({
-        user_id: user.id,
-        content: message,
-        memory_type: "chat",
-        importance: 5,
-        source: "chat",
-        source_message_id: crypto.randomUUID(),
-      });
+      } catch { /* extraction failure is non-fatal */ }
     }
+
+    // Always store every user message as a memory with embedding
+    await supabase.from("memories_structured").insert({
+      user_id: user.id,
+      content: message,
+      memory_type: "chat",
+      importance: factSignals.test(message) ? 7 : 3,
+      source: "chat",
+      source_message_id: crypto.randomUUID(),
+      embedding: queryEmbedding,
+    });
 
     // ─── Decision detection ───
     const decisionSignals = /\b(i decided|i'm going to|i will|i've decided|my decision|i choose|i commit)\b/i;
@@ -278,10 +303,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
       try {
         const decExtract = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${openaiKey}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
           body: JSON.stringify({
             model: "gpt-4o-mini",
             messages: [
@@ -309,20 +331,18 @@ When you have relevant context about the user, USE IT naturally. Reference their
             source_message_id: crypto.randomUUID(),
           });
         }
-      } catch {
-        // Decision extraction failure is non-fatal
-      }
+      } catch { /* non-fatal */ }
     }
 
     // ─── Governance trace ───
     await supabase.from("memory_traces").insert({
       user_id: user.id,
       action_description: `Responded to: "${message.slice(0, 100)}"`,
-      reasoning: `Context assembled: ${facts.length} facts, ${decisions.length} decisions, ${patterns.length} patterns, ${recentMems.length} memories`,
-      memory_ids: recentMems.slice(0, 5).map(() => crypto.randomUUID()), // placeholder
+      reasoning: `Context: ${facts.length} facts, ${decisions.length} decisions, ${patterns.length} patterns, ${recentMems.length} recent memories, ${semanticMems.length} semantic matches`,
+      memory_ids: [],
       fact_ids: [],
       decision_ids: [],
-      sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories"],
+      sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
     });
 
     return new Response(
@@ -334,6 +354,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
           decisions: decisions.length,
           patterns: patterns.length,
           memories: recentMems.length,
+          semantic_matches: semanticMems.length,
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
