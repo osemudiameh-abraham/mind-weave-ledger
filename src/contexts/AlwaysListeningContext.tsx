@@ -35,7 +35,7 @@ interface ProviderProps {
 
 export const AlwaysListeningProvider = ({ children }: ProviderProps) => {
   const [enabled, setEnabled] = useState(() => {
-    return localStorage.getItem("seven_always_listening") !== "false";
+    return localStorage.getItem("seven_always_listening") === "true";
   });
   const [isListening, setIsListening] = useState(false);
   const [isInLiveSession, setIsInLiveSession] = useState(false);
