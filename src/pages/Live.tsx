@@ -10,12 +10,21 @@ import LiveTextInput from "@/components/live/LiveTextInput";
 import LiveHeader from "@/components/live/LiveHeader";
 import LiveControls from "@/components/live/LiveControls";
 import LiveAurora from "@/components/live/LiveAurora";
+import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
 import { motion } from "framer-motion";
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 
 const Live = () => {
   const navigate = useNavigate();
   const session = useLiveSession();
+  const { setIsInLiveSession } = useAlwaysListening();
+
+  // Tell the global always-listening system to pause while Live is active
+  // (Live has its own mic handling)
+  useEffect(() => {
+    setIsInLiveSession(true);
+    return () => setIsInLiveSession(false);
+  }, [setIsInLiveSession]);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
 

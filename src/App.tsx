@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AlwaysListeningProvider } from "@/contexts/AlwaysListeningContext";
 import Splash from "./pages/Splash";
 
 const Login = lazy(() => import("./pages/Login"));
@@ -30,6 +31,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <AlwaysListeningProvider>
         <Suspense fallback={<div className="min-h-screen bg-background" />}>
           <Routes>
             <Route path="/" element={<Splash />} />
@@ -50,6 +52,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
+        </AlwaysListeningProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

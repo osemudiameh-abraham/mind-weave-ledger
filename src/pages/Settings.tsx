@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
 import {
   User,
   Mail,
@@ -17,6 +18,8 @@ import {
   Download,
   Loader2,
   AlertTriangle,
+  Mic,
+  AudioLines,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -42,6 +45,7 @@ type ThemeMode = "light" | "dark" | "system";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const { enabled: alwaysListeningEnabled, setEnabled: setAlwaysListeningEnabled, wakeWord } = useAlwaysListening();
 
   // Toggles
   const [pushEnabled, setPushEnabled] = useState(() => {
@@ -168,6 +172,28 @@ const Settings = () => {
         { icon: User, label: "Profile", desc: "Name, photo, bio", action: () => navigate("/profile") },
         { icon: ThemeIcon, label: "Appearance", desc: themeLabel, action: () => setThemeSheetOpen(true) },
         { icon: Smartphone, label: "Devices", desc: "2 active sessions", action: () => setDevicesSheetOpen(true) },
+      ],
+    },
+    {
+      title: "Live & Voice",
+      items: [
+        {
+          icon: AudioLines,
+          label: "Always Listening",
+          desc: alwaysListeningEnabled ? `Active — wake word: "${wakeWord}"` : "Disabled",
+          toggle: true,
+          toggled: alwaysListeningEnabled,
+          action: () => {
+            setAlwaysListeningEnabled(!alwaysListeningEnabled);
+            toast(alwaysListeningEnabled ? "Always Listening disabled" : "Always Listening enabled");
+          },
+        },
+        {
+          icon: Mic,
+          label: "Wake Word",
+          desc: `"${wakeWord}"`,
+          action: () => toast("Wake word customization coming soon"),
+        },
       ],
     },
     {
