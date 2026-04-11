@@ -210,8 +210,18 @@ const Profile = () => {
       <div className="pt-14 pb-24 px-4 max-w-lg mx-auto">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
           className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border mt-4 mb-6">
-          <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-lg">
-            {userName.charAt(0).toUpperCase()}
+          <div className="relative">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profile" className="w-14 h-14 rounded-full object-cover" />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium text-lg">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <button onClick={() => { setEditName(userName); setEditEmail(userEmail); setEditAvatarPreview(null); setEditSheet(true); }}
+              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-md">
+              <Camera size={12} className="text-primary-foreground" />
+            </button>
           </div>
           <div className="flex-1">
             <h2 className="text-[16px] font-medium text-foreground">{userName}</h2>
