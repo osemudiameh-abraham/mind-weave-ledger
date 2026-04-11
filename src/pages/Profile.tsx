@@ -71,7 +71,7 @@ const Profile = () => {
       appearance, userName, userEmail, rules, avatarUrl,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  }, [trackDecisions, trackHabits, trackPatterns, trackGoals, checkinSchedule, remindersEnabled, appearance, userName, userEmail, rules]);
+  }, [trackDecisions, trackHabits, trackPatterns, trackGoals, checkinSchedule, remindersEnabled, appearance, userName, userEmail, rules, avatarUrl]);
 
   // Apply theme
   useEffect(() => {
