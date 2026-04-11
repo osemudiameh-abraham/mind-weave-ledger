@@ -1,100 +1,92 @@
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Minus, CheckCircle2, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { TrendingUp, CheckCircle2, Brain, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import SevenLogo from "@/components/SevenLogo";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Digest = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ facts: 0, decisions: 0, patterns: 0, memories: 0 });
+
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      setLoading(true);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const [factsRes, decisionsRes, patternsRes, memoriesRes] = await Promise.all([
+        supabase.from("memory_facts").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+        supabase.from("decisions").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+        supabase.from("behaviour_patterns").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+        supabase.from("memories_structured").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+      ]);
+
+      setStats({
+        facts: factsRes.count || 0,
+        decisions: decisionsRes.count || 0,
+        patterns: patternsRes.count || 0,
+        memories: memoriesRes.count || 0,
+      });
+      setLoading(false);
+    };
+    load();
+  }, [user]);
+
+  const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString("en-GB", { month: "short", day: "numeric" });
+  const weekEnd = new Date().toLocaleDateString("en-GB", { month: "short", day: "numeric" });
+
   return (
     <AppLayout>
       <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <p className="text-[12px] font-medium text-primary mb-1">WEEKLY DIGEST</p>
-          <h1 className="text-[22px] font-medium text-foreground tracking-tight">Mar 31 – Apr 6</h1>
+          <h1 className="text-[22px] font-medium text-foreground tracking-tight">{weekStart} – {weekEnd}</h1>
           <p className="text-[13px] text-muted-foreground mt-1">Here's what Seven observed this week</p>
         </motion.div>
 
-        {/* Summary card */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-card border border-border rounded-2xl p-5 mb-4"
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <SevenLogo size={18} />
-            <span className="text-[13px] font-medium text-foreground">Seven's Summary</span>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-primary" size={24} />
           </div>
-          <p className="text-[14px] text-foreground/80 leading-relaxed">
-            Strong week for decision consistency. You followed through on 4 of 5 commitments.
-            Energy patterns suggest Tuesday mornings are your peak. One area to watch: you're
-            deferring the hiring decision again.
-          </p>
-        </motion.div>
-
-        {/* Metrics */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="grid grid-cols-3 gap-3 mb-4"
-        >
-          {[
-            { label: "Decisions", value: "7", trend: "up" },
-            { label: "Follow-through", value: "80%", trend: "up" },
-            { label: "Avg Energy", value: "7.2", trend: "neutral" },
-          ].map((m, i) => (
-            <div key={i} className="bg-card border border-border rounded-2xl p-4 text-center">
-              <p className="text-[20px] font-medium text-foreground">{m.value}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">{m.label}</p>
-              <div className="flex items-center justify-center mt-2">
-                {m.trend === "up" && <TrendingUp size={14} className="text-green-600" />}
-                {m.trend === "down" && <TrendingDown size={14} className="text-destructive" />}
-                {m.trend === "neutral" && <Minus size={14} className="text-muted-foreground" />}
+        ) : (
+          <>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card border border-border rounded-2xl p-5 mb-4">
+              <div className="flex items-center gap-2 mb-4">
+                <SevenLogo size={18} />
+                <span className="text-[13px] font-medium text-foreground">Seven's Summary</span>
               </div>
+              <p className="text-[14px] text-muted-foreground leading-relaxed">
+                {stats.memories > 0
+                  ? `This week you shared ${stats.memories} thoughts with Seven. ${stats.facts > 0 ? `I learned ${stats.facts} new facts about you. ` : ""}${stats.decisions > 0 ? `You made ${stats.decisions} tracked decisions. ` : ""}${stats.patterns > 0 ? `I detected ${stats.patterns} behavioural patterns.` : ""}`
+                  : "No activity this week. Start chatting and I'll track your patterns here."}
+              </p>
+            </motion.div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Facts learned", value: stats.facts, icon: CheckCircle2, color: "text-green-500" },
+                { label: "Decisions tracked", value: stats.decisions, icon: TrendingUp, color: "text-primary" },
+                { label: "Patterns found", value: stats.patterns, icon: Brain, color: "text-purple-500" },
+                { label: "Memories stored", value: stats.memories, icon: CheckCircle2, color: "text-blue-400" },
+              ].map((stat, i) => (
+                <motion.div
+                  key={stat.label}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + i * 0.05 }}
+                  className="bg-card border border-border rounded-2xl p-4"
+                >
+                  <stat.icon size={16} className={stat.color + " mb-2"} />
+                  <p className="text-[20px] font-medium text-foreground">{stat.value}</p>
+                  <p className="text-[11px] text-muted-foreground">{stat.label}</p>
+                </motion.div>
+              ))}
             </div>
-          ))}
-        </motion.div>
-
-        {/* Key moments */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-card border border-border rounded-2xl p-5 mb-4"
-        >
-          <h3 className="text-[14px] font-medium text-foreground mb-4">Key Moments</h3>
-          <div className="flex flex-col gap-4">
-            {[
-              { icon: CheckCircle2, color: "text-green-600", text: "Successfully delegated design reviews — freed up 4 hours" },
-              { icon: CheckCircle2, color: "text-green-600", text: "Maintained 6 AM wake-up for 5 consecutive days" },
-              { icon: AlertCircle, color: "text-amber-500", text: "Hiring decision deferred for the 4th time" },
-              { icon: CheckCircle2, color: "text-green-600", text: "Completed Q2 roadmap ahead of schedule" },
-            ].map((m, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <m.icon size={18} className={`${m.color} shrink-0 mt-0.5`} />
-                <p className="text-[13px] text-foreground/80 leading-relaxed">{m.text}</p>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Pattern insight */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="bg-primary/5 border border-primary/20 rounded-2xl p-5"
-        >
-          <p className="text-[12px] font-semibold text-primary uppercase tracking-wide mb-2">Pattern Insight</p>
-          <p className="text-[14px] text-foreground leading-relaxed">
-            When you make decisions before 10 AM, your satisfaction rating is 40% higher.
-            Consider scheduling important choices in your morning block.
-          </p>
-        </motion.div>
+          </>
+        )}
       </div>
     </AppLayout>
   );

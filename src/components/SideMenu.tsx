@@ -131,8 +131,8 @@ const SideMenu = ({
     setEditingId(null);
   };
 
-  const visibleSections = sections.filter((s) => !s.hidden);
-  const hiddenSections = sections.filter((s) => s.hidden);
+  const visibleSections = sections.filter((s) => !s.is_archived);
+  const hiddenSections = sections.filter((s) => s.is_archived);
 
   return (
     <>

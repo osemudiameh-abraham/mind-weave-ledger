@@ -20,7 +20,7 @@ const SignUp = () => {
   const strengthLabel = ["", "Weak", "Fair", "Strong"];
   const strengthColor = ["", "bg-destructive", "bg-yellow-500", "bg-green-500"];
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     setError("");
     if (!name.trim()) { setError("Please enter your name"); return; }
     if (!email.trim()) { setError("Please enter your email"); return; }
@@ -28,16 +28,14 @@ const SignUp = () => {
     if (password !== confirm) { setError("Passwords don't match"); return; }
 
     setLoading(true);
-    setTimeout(() => {
-      const result = signUp(name, email, password);
-      setLoading(false);
-      if (result.success) {
-        toast.success("Account created!");
-        navigate("/onboarding", { replace: true });
-      } else {
-        setError(result.error || "Sign up failed");
-      }
-    }, 800);
+    const result = await signUp(name, email, password);
+    setLoading(false);
+    if (result.success) {
+      toast.success("Account created!");
+      navigate("/onboarding", { replace: true });
+    } else {
+      setError(result.error || "Sign up failed");
+    }
   };
 
   const handleSocialAuth = (method: "google" | "apple") => {

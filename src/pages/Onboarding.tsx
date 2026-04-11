@@ -5,8 +5,10 @@ import { ArrowLeft, Check, Mic, ShieldCheck, Lock, EyeOff, BanIcon, Smartphone, 
 import SevenLogo from "@/components/SevenLogo";
 import { useAuth } from "@/contexts/AuthContext";
 
+import { supabase } from "@/lib/supabase";
+
 const Onboarding = () => {
-  const { completeOnboarding, updateProfile } = useAuth();
+  const { completeOnboarding, updateProfile, user } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
@@ -22,17 +24,26 @@ const Onboarding = () => {
   const toggle = (arr: string[], val: string, setter: (v: string[]) => void) =>
     setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
 
-  const next = () => {
+  const next = async () => {
     if (step === 1 && name.trim()) {
       localStorage.setItem("seven_user_name", name.trim());
-      updateProfile({ name: name.trim() });
+      await updateProfile({ name: name.trim() });
     }
     if (step === 5 && safeWord.trim()) {
       localStorage.setItem("seven_safe_word", safeWord.trim());
     }
     if (step < totalSteps) setStep(step + 1);
     else {
-      completeOnboarding();
+      // Save all onboarding data to Supabase
+      if (user) {
+        await supabase.from("identity_profiles").update({
+          self_name: name.trim() || undefined,
+          goals: goals,
+          focus_areas: selected,
+          safe_word: safeWord.trim() || undefined,
+        }).eq("user_id", user.id);
+      }
+      await completeOnboarding();
       navigate("/home", { replace: true });
     }
   };

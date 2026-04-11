@@ -1,102 +1,98 @@
 import { useState, useCallback, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface Section {
   id: string;
   name: string;
   createdAt: string;
-  hidden: boolean;
+  is_archived: boolean;
   messages: { role: "user" | "ai"; text: string }[];
 }
 
-const STORAGE_KEY = "seven_sections";
-
-const generateId = () => crypto.randomUUID?.() || Math.random().toString(36).slice(2);
-
-const generateName = (messages: { role: "user" | "ai"; text: string }[]) => {
-  const firstUser = messages.find((m) => m.role === "user");
-  if (!firstUser) return "New Section";
-  const words = firstUser.text.split(" ").slice(0, 5).join(" ");
-  return words.length > 30 ? words.slice(0, 30) + "…" : words || "New Section";
-};
-
 export function useSections() {
-  const [sections, setSections] = useState<Section[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const { user } = useAuth();
+  const [sections, setSections] = useState<Section[]>([]);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem("seven_active_section") || null;
-    } catch {
-      return null;
-    }
-  });
-
+  // Load conversations from Supabase
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sections));
-  }, [sections]);
+    if (!user) return;
 
-  useEffect(() => {
-    if (activeSectionId) {
-      localStorage.setItem("seven_active_section", activeSectionId);
-    } else {
-      localStorage.removeItem("seven_active_section");
-    }
-  }, [activeSectionId]);
+    const load = async () => {
+      const { data } = await supabase
+        .from("sections")
+        .select("id, title, is_archived, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
 
-  const createSection = useCallback(() => {
-    const newSection: Section = {
-      id: generateId(),
-      name: "New Section",
-      createdAt: new Date().toISOString(),
-      hidden: false,
-      messages: [],
+      if (data) {
+        setSections(
+          data.map((c) => ({
+            id: c.id,
+            name: c.title || "New Section",
+            createdAt: c.created_at,
+            is_archived: c.is_archived || false,
+            messages: [], // Messages loaded separately when conversation selected
+          }))
+        );
+      }
     };
-    setSections((prev) => [newSection, ...prev]);
-    setActiveSectionId(newSection.id);
-    return newSection.id;
-  }, []);
 
-  const renameSection = useCallback((id: string, name: string) => {
+    load();
+  }, [user]);
+
+  const createSection = useCallback(async () => {
+    if (!user) return null;
+    const { data } = await supabase
+      .from("sections")
+      .insert({ user_id: user.id, title: "New Section" })
+      .select("id, title, is_archived, created_at")
+      .single();
+
+    if (data) {
+      const newSection: Section = {
+        id: data.id,
+        name: data.title,
+        createdAt: data.created_at,
+        is_archived: false,
+        messages: [],
+      };
+      setSections((prev) => [newSection, ...prev]);
+      setActiveSectionId(data.id);
+      return data.id;
+    }
+    return null;
+  }, [user]);
+
+  const renameSection = useCallback(async (id: string, name: string) => {
+    await supabase.from("sections").update({ title: name }).eq("id", id);
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
   }, []);
 
-  const deleteSection = useCallback(
-    (id: string) => {
-      setSections((prev) => prev.filter((s) => s.id !== id));
-      if (activeSectionId === id) setActiveSectionId(null);
-    },
-    [activeSectionId]
-  );
+  const deleteSection = useCallback(async (id: string) => {
+    await supabase.from("sections").delete().eq("id", id);
+    setSections((prev) => prev.filter((s) => s.id !== id));
+    if (activeSectionId === id) setActiveSectionId(null);
+  }, [activeSectionId]);
 
-  const toggleHideSection = useCallback((id: string) => {
-    setSections((prev) => prev.map((s) => (s.id === id ? { ...s, hidden: !s.hidden } : s)));
-  }, []);
+  const toggleHideSection = useCallback(async (id: string) => {
+    const section = sections.find((s) => s.id === id);
+    if (!section) return;
+    await supabase.from("sections").update({ is_archived: !section.is_archived }).eq("id", id);
+    setSections((prev) => prev.map((s) => (s.id === id ? { ...s, is_archived: !s.is_archived } : s)));
+  }, [sections]);
 
   const addMessage = useCallback(
-    (sectionId: string, message: { role: "user" | "ai"; text: string }) => {
-      setSections((prev) =>
-        prev.map((s) => {
-          if (s.id !== sectionId) return s;
-          const updated = { ...s, messages: [...s.messages, message] };
-          // Auto-name on first user message
-          if (s.name === "New Section" && message.role === "user") {
-            updated.name = generateName(updated.messages);
-          }
-          return updated;
-        })
-      );
+    (_sectionId: string, _message: { role: "user" | "ai"; text: string }) => {
+      // No-op: messages now handled by useChat hook and stored in messages table
     },
     []
   );
 
   const activeSection = sections.find((s) => s.id === activeSectionId) || null;
-  const visibleSections = sections.filter((s) => !s.hidden);
+  const visibleSections = sections.filter((s) => !s.is_archived);
 
   return {
     sections,

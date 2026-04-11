@@ -1,7 +1,9 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
-import { Brain, Briefcase, Heart, Target, User } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Brain, Briefcase, Heart, Target, User, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 const categories = [
   { key: "all", label: "All", icon: null },
@@ -12,19 +14,47 @@ const categories = [
   { key: "patterns", label: "Patterns", icon: Brain },
 ];
 
-const facts = [
-  { id: 1, category: "identity", text: "You're a first-time founder building in AI", source: "Inferred from 14 conversations", date: "Apr 2" },
-  { id: 2, category: "work", text: "You prefer async communication over meetings", source: "Stated directly on Mar 12", date: "Mar 12" },
-  { id: 3, category: "values", text: "Autonomy is your #1 work value", source: "Consistent across 8 decisions", date: "Mar 8" },
-  { id: 4, category: "goals", text: "Launch MVP by end of Q2 2026", source: "Set as primary goal on Feb 15", date: "Feb 15" },
-  { id: 5, category: "patterns", text: "You make better decisions in the morning", source: "Tracked over 23 data points", date: "Mar 20" },
-  { id: 6, category: "identity", text: "You grew up in a multilingual household", source: "Mentioned in conversation", date: "Feb 28" },
-  { id: 7, category: "work", text: "Design reviews drain your energy the most", source: "Energy tracking pattern", date: "Mar 18" },
-  { id: 8, category: "goals", text: "Run a half marathon by September", source: "Set on Jan 10", date: "Jan 10" },
-];
+interface Fact {
+  id: string;
+  category: string;
+  text: string;
+  source: string;
+  date: string;
+}
 
 const Vault = () => {
+  const { user } = useAuth();
   const [active, setActive] = useState("all");
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("memory_facts")
+        .select("id, subject, attribute, value, category, source_type, created_at")
+        .eq("user_id", user.id)
+        .is("valid_until", null)
+        .order("created_at", { ascending: false });
+
+      if (data) {
+        setFacts(
+          data.map((f) => ({
+            id: f.id,
+            category: f.category || "general",
+            text: `${f.subject}: ${f.attribute} — ${f.value}`,
+            source: f.source_type === "explicit" ? "Stated directly" : f.source_type === "corrected" ? "Corrected by you" : "Inferred from conversation",
+            date: new Date(f.created_at).toLocaleDateString("en-GB", { month: "short", day: "numeric" }),
+          }))
+        );
+      }
+      setLoading(false);
+    };
+    load();
+  }, [user]);
+
   const filtered = active === "all" ? facts : facts.filter((f) => f.category === active);
 
   return (
@@ -56,23 +86,33 @@ const Vault = () => {
           ))}
         </div>
 
-        <div className="flex flex-col gap-3">
-          {filtered.map((fact, i) => (
-            <motion.div
-              key={fact.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className="bg-card border border-border rounded-2xl p-4"
-            >
-              <p className="text-[14px] text-foreground leading-relaxed mb-3">{fact.text}</p>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-muted-foreground">{fact.source}</span>
-                <span className="text-[11px] text-muted-foreground">{fact.date}</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-primary" size={24} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-[14px] text-muted-foreground">No facts yet. Start chatting and Seven will learn about you.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {filtered.map((fact, i) => (
+              <motion.div
+                key={fact.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="bg-card border border-border rounded-2xl p-4"
+              >
+                <p className="text-[14px] text-foreground leading-relaxed mb-3">{fact.text}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-muted-foreground">{fact.source}</span>
+                  <span className="text-[11px] text-muted-foreground">{fact.date}</span>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </div>
     </AppLayout>
   );

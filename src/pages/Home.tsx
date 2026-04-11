@@ -13,6 +13,8 @@ import SideMenu from "@/components/SideMenu";
 import { useSections } from "@/hooks/use-sections";
 import { useTrialStatus } from "@/hooks/use-trial-status";
 import TrialOfferDialog from "@/components/TrialOfferDialog";
+import { useChat } from "@/hooks/use-chat";
+import { Loader2 } from "lucide-react";
 
 const suggestions = [
   "What patterns did I show this week?",
@@ -41,6 +43,7 @@ const Home = () => {
   } = useSections();
 
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
+  const { messages, loading: chatLoading, sendMessage, loadSection, newSection } = useChat();
 
   // Toast for due reminders
   useEffect(() => {
@@ -50,18 +53,17 @@ const Home = () => {
     });
   }, [dueNow, markSeen]);
 
-  const messages = activeSection?.messages || [];
+  // Load conversation when sidebar selection changes
+  useEffect(() => {
+    if (activeSectionId) {
+      loadSection(activeSectionId);
+    } else {
+      newSection();
+    }
+  }, [activeSectionId, loadSection, newSection]);
 
   const handleSend = (text: string) => {
-    let sectionId = activeSectionId;
-    if (!sectionId) {
-      sectionId = createSection();
-    }
-    addMessage(sectionId!, { role: "user", text });
-    addMessage(sectionId!, {
-      role: "ai",
-      text: `Based on your patterns, here's what I notice about "${text.slice(0, 40)}…" — this connects to a recurring theme in your decisions. I'll keep tracking this.`,
-    });
+    sendMessage(text);
   };
 
   const userName = localStorage.getItem("seven_user_name") || "there";
@@ -195,6 +197,18 @@ const Home = () => {
                 )}
               </motion.div>
             ))}
+            {chatLoading && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex justify-start"
+              >
+                <div className="flex items-center gap-2 px-4 py-3 rounded-[20px] bg-muted">
+                  <Loader2 size={14} className="animate-spin text-primary" />
+                  <span className="text-[13px] text-muted-foreground">Seven is thinking…</span>
+                </div>
+              </motion.div>
+            )}
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
 const Login = () => {
@@ -20,7 +21,7 @@ const Login = () => {
     return null;
   }
 
-  const handleEmailLogin = () => {
+  const handleEmailLogin = async () => {
     if (!email.trim() || !password.trim()) {
       setError("Please enter both email and password");
       return;
@@ -28,8 +29,7 @@ const Login = () => {
     setLoading("email");
     setError("");
 
-    setTimeout(() => {
-      const result = signIn(email, password);
+      const result = await signIn(email, password);
       setLoading(null);
       if (result.success) {
         if (result.needsVerification) {
@@ -40,13 +40,22 @@ const Login = () => {
       } else {
         setError(result.error || "Login failed");
       }
-    }, 800);
   };
 
-  const handleSocialAuth = (method: "google" | "apple") => {
-    setLoading(method);
-    toast("Social login will be available when backend is connected", { duration: 3000 });
-    setTimeout(() => setLoading(null), 1500);
+  const handleSocialAuth = async (method: "google" | "apple") => {
+    if (method === "google") {
+      setLoading("google");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/home` },
+      });
+      if (error) {
+        toast.error(error.message);
+        setLoading(null);
+      }
+    } else {
+      toast("Apple login coming soon", { duration: 3000 });
+    }
   };
 
   return (

@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
+import type { User } from "@supabase/supabase-js";
 
 // ─── Types ───────────────────────────────────────────────────────
 export interface UserAccount {
   id: string;
   name: string;
   email: string;
-  passwordHash: string; // In production, NEVER store plain passwords — use backend auth
+  passwordHash: string;
   createdAt: string;
   onboardingComplete: boolean;
   trustedDevice: boolean;
@@ -15,197 +17,158 @@ export interface UserAccount {
 interface AuthState {
   user: UserAccount | null;
   isAuthenticated: boolean;
-  isVerified: boolean; // Post-login security verification passed
+  isVerified: boolean;
+  loading: boolean;
 }
 
 interface AuthContextType extends AuthState {
-  signUp: (name: string, email: string, password: string) => { success: boolean; error?: string };
-  signIn: (email: string, password: string) => { success: boolean; error?: string; needsVerification?: boolean };
+  signUp: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; needsVerification?: boolean }>;
   signOut: () => void;
-  completeOnboarding: () => void;
+  completeOnboarding: () => Promise<void>;
   verifyIdentity: (method: "password" | "biometric", value?: string) => boolean;
   trustDevice: (trust: boolean) => void;
-  deleteAccount: () => void;
-  updateProfile: (updates: Partial<Pick<UserAccount, "name" | "email">>) => void;
+  deleteAccount: () => Promise<void>;
+  updateProfile: (updates: Partial<Pick<UserAccount, "name" | "email">>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// ─── Storage helpers ─────────────────────────────────────────────
-const ACCOUNTS_KEY = "seven_accounts";
-const SESSION_KEY = "seven_session";
-
-function getAccounts(): UserAccount[] {
-  try {
-    return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]");
-  } catch { return []; }
+function toUserAccount(user: User, onboardingComplete: boolean): UserAccount {
+  return {
+    id: user.id,
+    name: user.user_metadata?.name || user.email?.split("@")[0] || "User",
+    email: user.email || "",
+    passwordHash: "",
+    createdAt: user.created_at,
+    onboardingComplete,
+    trustedDevice: true,
+    verifiedThisSession: true,
+  };
 }
 
-function saveAccounts(accounts: UserAccount[]) {
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-}
-
-function getSession(): { userId: string; verified: boolean } | null {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-function saveSession(userId: string, verified: boolean) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId, verified }));
-}
-
-function clearSession() {
-  sessionStorage.removeItem(SESSION_KEY);
-}
-
-// Simple hash (placeholder — real apps use bcrypt on the server)
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return "h_" + Math.abs(hash).toString(36);
-}
-
-// ─── Provider ────────────────────────────────────────────────────
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [state, setState] = useState<AuthState>(() => {
-    const session = getSession();
-    if (session) {
-      const accounts = getAccounts();
-      const user = accounts.find(a => a.id === session.userId) || null;
-      if (user) {
-        return { user, isAuthenticated: true, isVerified: session.verified };
-      }
-    }
-    return { user: null, isAuthenticated: false, isVerified: false };
+  const [state, setState] = useState<AuthState>({
+    user: null,
+    isAuthenticated: false,
+    isVerified: false,
+    loading: true,
   });
 
-  const signUp = useCallback((name: string, email: string, password: string) => {
-    const accounts = getAccounts();
-    const normalizedEmail = email.trim().toLowerCase();
-    
-    if (accounts.some(a => a.email === normalizedEmail)) {
-      return { success: false, error: "An account with this email already exists" };
-    }
-    if (password.length < 6) {
-      return { success: false, error: "Password must be at least 6 characters" };
-    }
+  const checkOnboarding = useCallback(async (userId: string): Promise<boolean> => {
+    const { data } = await supabase
+      .from("identity_profiles")
+      .select("onboarding_complete")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return data?.onboarding_complete ?? false;
+  }, []);
 
-    const newUser: UserAccount = {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      email: normalizedEmail,
-      passwordHash: simpleHash(password),
-      createdAt: new Date().toISOString(),
-      onboardingComplete: false,
-      trustedDevice: false,
-      verifiedThisSession: true,
-    };
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const onboarded = await checkOnboarding(session.user.id);
+        const account = toUserAccount(session.user, onboarded);
+        localStorage.setItem("seven_user_name", account.name);
+        setState({ user: account, isAuthenticated: true, isVerified: true, loading: false });
+      } else {
+        setState({ user: null, isAuthenticated: false, isVerified: false, loading: false });
+      }
+    });
 
-    accounts.push(newUser);
-    saveAccounts(accounts);
-    saveSession(newUser.id, true);
-    localStorage.setItem("seven_user_name", newUser.name);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const onboarded = await checkOnboarding(session.user.id);
+        const account = toUserAccount(session.user, onboarded);
+        localStorage.setItem("seven_user_name", account.name);
+        setState({ user: account, isAuthenticated: true, isVerified: true, loading: false });
+      } else {
+        setState({ user: null, isAuthenticated: false, isVerified: false, loading: false });
+      }
+    });
 
-    setState({ user: newUser, isAuthenticated: true, isVerified: true });
+    return () => subscription.unsubscribe();
+  }, [checkOnboarding]);
+
+  const signUp = useCallback(async (name: string, email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: { data: { name: name.trim() } },
+    });
+    if (error) return { success: false, error: error.message };
+    if (!data.user) return { success: false, error: "Sign up failed" };
+
+    await supabase.from("identity_profiles").upsert({
+      user_id: data.user.id,
+      self_name: name.trim(),
+      onboarding_complete: false,
+    });
+    await supabase.from("user_preferences").upsert({ user_id: data.user.id });
+
+    localStorage.setItem("seven_user_name", name.trim());
     return { success: true };
   }, []);
 
-  const signIn = useCallback((email: string, password: string) => {
-    const accounts = getAccounts();
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = accounts.find(a => a.email === normalizedEmail);
-
-    if (!user) {
-      return { success: false, error: "No account found with this email" };
-    }
-    if (user.passwordHash !== simpleHash(password)) {
-      return { success: false, error: "Incorrect password" };
-    }
-
-    const needsVerification = user.onboardingComplete && !user.trustedDevice;
-    const verified = user.trustedDevice || !user.onboardingComplete;
-
-    saveSession(user.id, verified);
-    localStorage.setItem("seven_user_name", user.name);
-
-    setState({ user, isAuthenticated: true, isVerified: verified });
-    return { success: true, needsVerification };
-  }, []);
-
-  const signOut = useCallback(() => {
-    clearSession();
-    setState({ user: null, isAuthenticated: false, isVerified: false });
-  }, []);
-
-  const completeOnboarding = useCallback(() => {
-    setState(prev => {
-      if (!prev.user) return prev;
-      const updated = { ...prev.user, onboardingComplete: true };
-      const accounts = getAccounts().map(a => a.id === updated.id ? updated : a);
-      saveAccounts(accounts);
-      return { ...prev, user: updated };
+  const signIn = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
     });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   }, []);
 
-  const verifyIdentity = useCallback((method: "password" | "biometric", value?: string) => {
-    if (!state.user) return false;
-
-    if (method === "biometric") {
-      // In production, this uses WebAuthn/platform authenticator
-      // For now, simulate success
-      saveSession(state.user.id, true);
-      setState(prev => ({ ...prev, isVerified: true }));
-      return true;
-    }
-
-    if (method === "password" && value) {
-      if (state.user.passwordHash === simpleHash(value)) {
-        saveSession(state.user.id, true);
-        setState(prev => ({ ...prev, isVerified: true }));
-        return true;
-      }
-      return false;
-    }
-
-    return false;
-  }, [state.user]);
-
-  const trustDevice = useCallback((trust: boolean) => {
-    setState(prev => {
-      if (!prev.user) return prev;
-      const updated = { ...prev.user, trustedDevice: trust };
-      const accounts = getAccounts().map(a => a.id === updated.id ? updated : a);
-      saveAccounts(accounts);
-      return { ...prev, user: updated };
-    });
-  }, []);
-
-  const deleteAccount = useCallback(() => {
-    if (!state.user) return;
-    const accounts = getAccounts().filter(a => a.id !== state.user!.id);
-    saveAccounts(accounts);
-    clearSession();
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem("seven_user_name");
     localStorage.removeItem("seven_trial");
-    setState({ user: null, isAuthenticated: false, isVerified: false });
+    setState({ user: null, isAuthenticated: false, isVerified: false, loading: false });
+  }, []);
+
+  const completeOnboarding = useCallback(async () => {
+    if (!state.user) return;
+    await supabase
+      .from("identity_profiles")
+      .update({ onboarding_complete: true })
+      .eq("user_id", state.user.id);
+    setState((prev) => {
+      if (!prev.user) return prev;
+      return { ...prev, user: { ...prev.user, onboardingComplete: true } };
+    });
   }, [state.user]);
 
-  const updateProfile = useCallback((updates: Partial<Pick<UserAccount, "name" | "email">>) => {
-    setState(prev => {
-      if (!prev.user) return prev;
-      const updated = { ...prev.user, ...updates };
-      if (updates.name) localStorage.setItem("seven_user_name", updates.name);
-      const accounts = getAccounts().map(a => a.id === updated.id ? updated : a);
-      saveAccounts(accounts);
-      return { ...prev, user: updated };
-    });
+  const verifyIdentity = useCallback((_method: "password" | "biometric", _value?: string) => {
+    return true;
   }, []);
+
+  const trustDevice = useCallback((_trust: boolean) => {}, []);
+
+  const deleteAccount = useCallback(async () => {
+    if (!state.user) return;
+    await supabase.from("identity_profiles").delete().eq("user_id", state.user.id);
+    await supabase.from("memories_structured").delete().eq("user_id", state.user.id);
+    await supabase.from("memory_facts").delete().eq("user_id", state.user.id);
+    await supabase.from("decisions").delete().eq("user_id", state.user.id);
+    await supabase.from("sections").delete().eq("user_id", state.user.id);
+    await supabase.from("user_preferences").delete().eq("user_id", state.user.id);
+    await supabase.auth.signOut();
+    localStorage.removeItem("seven_user_name");
+    setState({ user: null, isAuthenticated: false, isVerified: false, loading: false });
+  }, [state.user]);
+
+  const updateProfile = useCallback(async (updates: Partial<Pick<UserAccount, "name" | "email">>) => {
+    if (!state.user) return;
+    if (updates.name) {
+      await supabase.auth.updateUser({ data: { name: updates.name } });
+      await supabase.from("identity_profiles").update({ self_name: updates.name }).eq("user_id", state.user.id);
+      localStorage.setItem("seven_user_name", updates.name);
+    }
+    setState((prev) => {
+      if (!prev.user) return prev;
+      return { ...prev, user: { ...prev.user, ...updates } };
+    });
+  }, [state.user]);
 
   return (
     <AuthContext.Provider value={{
@@ -213,7 +176,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signUp, signIn, signOut, completeOnboarding,
       verifyIdentity, trustDevice, deleteAccount, updateProfile,
     }}>
-      {children}
+      {state.loading ? (
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : children}
     </AuthContext.Provider>
   );
 };
