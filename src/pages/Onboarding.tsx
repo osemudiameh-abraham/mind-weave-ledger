@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Check, Mic, ShieldCheck, Lock, EyeOff, BanIcon, Smartphone, MessageSquare, Mail, Activity, Brain, AlertTriangle } from "lucide-react";
 import SevenLogo from "@/components/SevenLogo";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Onboarding = () => {
   const navigate = useNavigate();
