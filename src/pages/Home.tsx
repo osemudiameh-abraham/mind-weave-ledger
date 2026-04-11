@@ -11,6 +11,8 @@ import SevenLogo from "@/components/SevenLogo";
 import { useReminders } from "@/hooks/use-reminders";
 import SideMenu from "@/components/SideMenu";
 import { useSections } from "@/hooks/use-sections";
+import { useTrialStatus } from "@/hooks/use-trial-status";
+import TrialOfferDialog from "@/components/TrialOfferDialog";
 
 const suggestions = [
   "What patterns did I show this week?",
@@ -37,6 +39,8 @@ const Home = () => {
     toggleHideSection,
     addMessage,
   } = useSections();
+
+  const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
 
   // Toast for due reminders
   useEffect(() => {
@@ -197,6 +201,12 @@ const Home = () => {
 
       <ChatInput onSend={handleSend} onLive={() => navigate("/live")} />
       <BottomNav />
+
+      <TrialOfferDialog
+        open={shouldShowPopup}
+        onStartTrial={() => { startTrial(); toast.success("Your 14-day free trial has started!"); }}
+        onDismiss={markPopupShown}
+      />
     </div>
   );
 };
