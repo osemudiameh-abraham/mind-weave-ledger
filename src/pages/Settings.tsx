@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
 import {
   User,
   Mail,
@@ -17,6 +18,8 @@ import {
   Download,
   Loader2,
   AlertTriangle,
+  Mic,
+  AudioLines,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -42,6 +45,7 @@ type ThemeMode = "light" | "dark" | "system";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const { enabled: alwaysListeningEnabled, setEnabled: setAlwaysListeningEnabled, wakeWord } = useAlwaysListening();
 
   // Toggles
   const [pushEnabled, setPushEnabled] = useState(() => {
