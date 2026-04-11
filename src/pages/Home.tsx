@@ -165,13 +165,13 @@ const Home = () => {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.4 }}
-              className="flex gap-2 overflow-x-auto no-scrollbar mt-8 -mx-4 px-4 w-full max-w-[850px]"
+              className="flex flex-wrap justify-center gap-2 mt-8"
             >
               {suggestions.map((s, i) => (
                 <button
                   key={i}
                   onClick={() => handleSend(s)}
-                  className="flex-shrink-0 px-4 py-2.5 rounded-full border border-border bg-card text-[13px] text-foreground font-medium hover:bg-muted transition-colors whitespace-nowrap"
+                  className="px-4 py-2.5 rounded-full border border-border bg-card text-[13px] text-foreground font-medium hover:bg-muted transition-colors"
                 >
                   {s}
                 </button>

@@ -34,7 +34,7 @@ const CheckInSheet = ({ open, onClose, userName, decision }: CheckInSheetProps) 
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-3xl p-6 max-w-7xl mx-auto border-t border-border"
+            className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-3xl p-6 max-w-lg mx-auto border-t border-border"
           >
             <div className="w-10 h-1 rounded-full bg-border mx-auto mb-6" />
 
