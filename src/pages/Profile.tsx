@@ -68,7 +68,7 @@ const Profile = () => {
     const prefs = {
       trackDecisions, trackHabits, trackPatterns, trackGoals,
       checkinSchedule, remindersEnabled, governanceRules: rules.filter(r => r.enabled).length,
-      appearance, userName, userEmail, rules,
+      appearance, userName, userEmail, rules, avatarUrl,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   }, [trackDecisions, trackHabits, trackPatterns, trackGoals, checkinSchedule, remindersEnabled, appearance, userName, userEmail, rules]);
