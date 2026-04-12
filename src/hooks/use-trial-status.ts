@@ -1,79 +1,146 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
-const TRIAL_KEY = "seven_trial";
 const TRIAL_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const POPUP_KEY = "seven_trial_popup_shown"; // UI-only — safe in localStorage
 
-interface TrialData {
+interface TrialState {
+  loading: boolean;
+  status: "trial" | "active" | "past_due" | "cancelled" | "expired" | null;
+  trialStartedAt: Date | null;
+  trialExpiresAt: Date | null;
   popupShown: boolean;
-  trialStartedAt: string | null;
-}
-
-function getTrialData(): TrialData {
-  try {
-    const raw = localStorage.getItem(TRIAL_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { popupShown: false, trialStartedAt: null };
-}
-
-function saveTrialData(data: TrialData) {
-  localStorage.setItem(TRIAL_KEY, JSON.stringify(data));
 }
 
 export function useTrialStatus() {
-  const [data, setData] = useState<TrialData>(getTrialData);
+  const { user } = useAuth();
+  const [state, setState] = useState<TrialState>({
+    loading: true,
+    status: null,
+    trialStartedAt: null,
+    trialExpiresAt: null,
+    popupShown: localStorage.getItem(POPUP_KEY) === "true",
+  });
 
-  const popupShown = data.popupShown;
-  const trialStartedAt = data.trialStartedAt ? new Date(data.trialStartedAt) : null;
+  // Load subscription state from Supabase
+  useEffect(() => {
+    if (!user) {
+      setState((prev) => ({ ...prev, loading: false }));
+      return;
+    }
 
-  const isTrialActive = !!trialStartedAt && Date.now() - trialStartedAt.getTime() < TRIAL_DURATION_MS;
-  const isTrialExpired = !!trialStartedAt && !isTrialActive;
+    let cancelled = false;
 
-  const daysRemaining = trialStartedAt
-    ? Math.max(0, Math.ceil((trialStartedAt.getTime() + TRIAL_DURATION_MS - Date.now()) / (24 * 60 * 60 * 1000)))
-    : 0;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .select("status, plan, trial_started_at, trial_expires_at")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-  const shouldShowPopup = !popupShown && !trialStartedAt;
+      if (cancelled) return;
+
+      if (error) {
+        console.error("[TRIAL] Failed to load subscription:", error.message);
+        setState((prev) => ({ ...prev, loading: false }));
+        return;
+      }
+
+      if (data) {
+        // Subscription row exists — read state from it
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          status: data.status,
+          trialStartedAt: data.trial_started_at ? new Date(data.trial_started_at) : null,
+          trialExpiresAt: data.trial_expires_at ? new Date(data.trial_expires_at) : null,
+        }));
+      } else {
+        // No subscription row — user hasn't started trial yet
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          status: null,
+          trialStartedAt: null,
+          trialExpiresAt: null,
+        }));
+      }
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const isTrialActive =
+    state.status === "trial" &&
+    state.trialExpiresAt !== null &&
+    new Date() < state.trialExpiresAt;
+
+  const isTrialExpired =
+    state.status === "trial" &&
+    state.trialExpiresAt !== null &&
+    new Date() >= state.trialExpiresAt;
+
+  // Active paid subscription
+  const isSubscriptionActive = state.status === "active";
+
+  // Can the user use the product (trial or paid)
+  const hasAccess = isTrialActive || isSubscriptionActive;
+
+  const daysRemaining =
+    state.trialExpiresAt
+      ? Math.max(0, Math.ceil((state.trialExpiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+      : 0;
+
+  const shouldShowPopup = !state.popupShown && state.status === null && !state.loading;
+
+  const startTrial = useCallback(async () => {
+    if (!user) return;
+
+    const now = new Date();
+    const expires = new Date(now.getTime() + TRIAL_DURATION_MS);
+
+    const { error } = await supabase.from("subscriptions").upsert({
+      user_id: user.id,
+      status: "trial",
+      plan: "trial",
+      trial_started_at: now.toISOString(),
+      trial_expires_at: expires.toISOString(),
+    });
+
+    if (error) {
+      console.error("[TRIAL] Failed to start trial:", error.message);
+      return;
+    }
+
+    localStorage.setItem(POPUP_KEY, "true");
+
+    setState((prev) => ({
+      ...prev,
+      status: "trial",
+      trialStartedAt: now,
+      trialExpiresAt: expires,
+      popupShown: true,
+    }));
+  }, [user]);
 
   const markPopupShown = useCallback(() => {
-    setData((prev) => {
-      // If trial hasn't started yet, start it when popup is dismissed
-      const updated: TrialData = {
-        ...prev,
-        popupShown: true,
-        trialStartedAt: prev.trialStartedAt || new Date().toISOString(),
-      };
-      saveTrialData(updated);
-      return updated;
-    });
-  }, []);
-
-  const startTrial = useCallback(() => {
-    setData((prev) => {
-      const updated: TrialData = {
-        popupShown: true,
-        trialStartedAt: prev.trialStartedAt || new Date().toISOString(),
-      };
-      saveTrialData(updated);
-      return updated;
-    });
-  }, []);
-
-  // Sync across tabs
-  useEffect(() => {
-    const handler = (e: StorageEvent) => {
-      if (e.key === TRIAL_KEY) setData(getTrialData());
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    localStorage.setItem(POPUP_KEY, "true");
+    setState((prev) => ({ ...prev, popupShown: true }));
   }, []);
 
   return {
+    loading: state.loading,
     shouldShowPopup,
     isTrialActive,
     isTrialExpired,
+    isSubscriptionActive,
+    hasAccess,
     daysRemaining,
-    trialStartedAt,
+    trialStartedAt: state.trialStartedAt,
+    trialExpiresAt: state.trialExpiresAt,
+    status: state.status,
     markPopupShown,
     startTrial,
   };

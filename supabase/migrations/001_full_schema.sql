@@ -398,14 +398,16 @@ create table if not exists public.digest_entries (
 );
 
 -- ============================================================
--- VECTOR INDEXES (HNSW for fast similarity search)
--- v5: m=16, ef_construction=64
+-- VECTOR INDEXES
+-- NOTE: pgvector index types (ivfflat, hnsw) support max 2000 dimensions.
+-- text-embedding-3-large produces 3072 dimensions.
+-- Vector search works via sequential scan without indexes.
+-- At scale (10K+ memories), migrate to either:
+--   1. text-embedding-3-large with dimensions=2000 (OpenAI supports this)
+--   2. halfvec casting for HNSW indexing (pgvector 0.7.0+)
+--   3. Dedicated vector database (Pinecone)
+-- For now, sequential scan is sufficient and correct.
 -- ============================================================
-create index if not exists idx_memories_embedding on public.memories_structured
-  using ivfflat (embedding extensions.vector_cosine_ops) with (lists = 100);
-
-create index if not exists idx_situations_embedding on public.situations
-  using ivfflat (embedding extensions.vector_cosine_ops) with (lists = 100);
 
 -- ============================================================
 -- ROW LEVEL SECURITY — every table locked to owner
