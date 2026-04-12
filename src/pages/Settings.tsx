@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
 import {
@@ -41,39 +41,32 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { supabase } from "@/lib/supabase";
 
 type ThemeMode = "light" | "dark" | "system";
 
 const Settings = () => {
   const navigate = useNavigate();
   const auth = useAuth();
+  const { user } = auth;
   const { enabled: alwaysListeningEnabled, setEnabled: setAlwaysListeningEnabled, wakeWord } = useAlwaysListening();
 
-  // Toggles
+  // Preferences state — initialised from localStorage cache, then overwritten by Supabase
   const [pushEnabled, setPushEnabled] = useState(() => {
     return localStorage.getItem("seven_push_notifs") !== "false";
   });
   const [emailEnabled, setEmailEnabled] = useState(() => {
     return localStorage.getItem("seven_email_notifs") !== "false";
   });
-
-  // Theme
   const [theme, setTheme] = useState<ThemeMode>(() => {
     return (localStorage.getItem("seven_theme") as ThemeMode) || "system";
   });
+
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
-
-  // Devices sheet
   const [devicesSheetOpen, setDevicesSheetOpen] = useState(false);
-  const sessions = [
-    { name: "This device", browser: "Chrome on macOS", lastActive: "Now", current: true },
-    { name: "iPhone 16 Pro", browser: "Safari on iOS 18", lastActive: "2 hours ago", current: false },
-  ];
 
-  // Gmail connection
-  const [gmailConnected, setGmailConnected] = useState(() => {
-    return localStorage.getItem("seven_gmail_connected") !== "false";
-  });
+  // Gmail connection — check oauth_tokens table
+  const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailConnecting, setGmailConnecting] = useState(false);
 
   // Export
@@ -86,10 +79,73 @@ const Settings = () => {
   // Sign out dialog
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false);
 
+  // ─── Load preferences from Supabase on mount ───
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const load = async () => {
+      const [prefsRes, gmailRes] = await Promise.all([
+        supabase
+          .from("user_preferences")
+          .select("push_enabled, email_reminders, theme")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("oauth_tokens")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("provider", "gmail")
+          .maybeSingle(),
+      ]);
+
+      if (cancelled) return;
+
+      if (prefsRes.data) {
+        const p = prefsRes.data;
+        setPushEnabled(p.push_enabled ?? false);
+        setEmailEnabled(p.email_reminders ?? true);
+        const dbTheme = (p.theme as ThemeMode) || "system";
+        setTheme(dbTheme);
+        // Sync localStorage cache
+        localStorage.setItem("seven_push_notifs", String(p.push_enabled ?? false));
+        localStorage.setItem("seven_email_notifs", String(p.email_reminders ?? true));
+        localStorage.setItem("seven_theme", dbTheme);
+        applyTheme(dbTheme);
+      }
+
+      setGmailConnected(!!gmailRes.data);
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // ─── Apply theme to document ───
+  const applyTheme = useCallback((mode: ThemeMode) => {
+    document.documentElement.classList.remove("light", "dark");
+    if (mode !== "system") {
+      document.documentElement.classList.add(mode);
+    }
+  }, []);
+
+  // ─── Update a single preference in Supabase ───
+  const updatePref = useCallback(async (field: string, value: boolean | string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("user_preferences")
+      .update({ [field]: value })
+      .eq("user_id", user.id);
+    if (error) {
+      console.error("[SETTINGS] Failed to update preference:", field, error.message);
+    }
+  }, [user]);
+
   const handleTogglePush = () => {
     const next = !pushEnabled;
     setPushEnabled(next);
     localStorage.setItem("seven_push_notifs", String(next));
+    updatePref("push_enabled", next);
     toast(next ? "Push notifications enabled" : "Push notifications disabled");
   };
 
@@ -97,56 +153,78 @@ const Settings = () => {
     const next = !emailEnabled;
     setEmailEnabled(next);
     localStorage.setItem("seven_email_notifs", String(next));
+    updatePref("email_reminders", next);
     toast(next ? "Email notifications enabled" : "Email notifications disabled");
   };
 
   const handleThemeChange = (mode: ThemeMode) => {
     setTheme(mode);
     localStorage.setItem("seven_theme", mode);
-    document.documentElement.classList.remove("light", "dark");
-    if (mode !== "system") {
-      document.documentElement.classList.add(mode);
-    }
+    applyTheme(mode);
+    updatePref("theme", mode);
     setThemeSheetOpen(false);
     toast(`Theme set to ${mode}`);
   };
 
   const handleGmailToggle = () => {
     if (gmailConnected) {
-      setGmailConnected(false);
-      localStorage.setItem("seven_gmail_connected", "false");
-      toast("Gmail disconnected");
+      // Disconnect: remove oauth token
+      if (user) {
+        supabase.from("oauth_tokens").delete().eq("user_id", user.id).eq("provider", "gmail")
+          .then(() => {
+            setGmailConnected(false);
+            toast("Gmail disconnected");
+          });
+      }
     } else {
+      // Connect: OAuth flow placeholder — will be wired in GEL phase
       setGmailConnecting(true);
       setTimeout(() => {
         setGmailConnecting(false);
-        setGmailConnected(true);
-        localStorage.setItem("seven_gmail_connected", "true");
-        toast.success("Gmail connected successfully");
-      }, 2000);
+        toast("Gmail OAuth integration coming in Phase 6");
+      }, 1500);
     }
   };
 
-  const handleExportData = () => {
+  const handleExportData = async () => {
+    if (!user) return;
     setExporting(true);
-    // Simulate export preparation
-    setTimeout(() => {
-      const data = {
+
+    try {
+      const [factsRes, decisionsRes, outcomesRes, sectionsRes, prefsRes, identityRes] = await Promise.all([
+        supabase.from("memory_facts").select("*").eq("user_id", user.id),
+        supabase.from("decisions").select("*").eq("user_id", user.id),
+        supabase.from("outcomes").select("*").eq("user_id", user.id),
+        supabase.from("sections").select("id, title, created_at").eq("user_id", user.id),
+        supabase.from("user_preferences").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("identity_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+      ]);
+
+      const exportData = {
         exportedAt: new Date().toISOString(),
-        sections: [],
-        settings: { pushEnabled, emailEnabled, theme },
-        note: "This is a simulated data export. In production, this would contain all your data.",
+        user: { id: user.id, email: user.email },
+        identity: identityRes.data || null,
+        preferences: prefsRes.data || null,
+        facts: factsRes.data || [],
+        decisions: decisionsRes.data || [],
+        outcomes: outcomesRes.data || [],
+        sections: sectionsRes.data || [],
       };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `seven-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `seven-mynd-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setExporting(false);
       toast.success("Data exported successfully");
-    }, 1500);
+    } catch (err) {
+      console.error("[EXPORT] Failed:", err);
+      toast.error("Export failed. Please try again.");
+    }
+
+    setExporting(false);
   };
 
   const handleDeleteAccount = () => {
@@ -167,13 +245,18 @@ const Settings = () => {
   const themeLabel = theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
   const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
 
+  // Hardcoded sessions for now — will wire to devices table in Phase 11
+  const sessions = [
+    { name: "This device", browser: "Current browser", lastActive: "Now", current: true },
+  ];
+
   const sections = [
     {
       title: "Account",
       items: [
         { icon: User, label: "Profile", desc: "Name, photo, bio", action: () => navigate("/profile") },
         { icon: ThemeIcon, label: "Appearance", desc: themeLabel, action: () => setThemeSheetOpen(true) },
-        { icon: Smartphone, label: "Devices", desc: "2 active sessions", action: () => setDevicesSheetOpen(true) },
+        { icon: Smartphone, label: "Devices", desc: `${sessions.length} active session${sessions.length !== 1 ? "s" : ""}`, action: () => setDevicesSheetOpen(true) },
       ],
     },
     {
@@ -204,7 +287,7 @@ const Settings = () => {
         {
           icon: Mail,
           label: "Gmail",
-          desc: gmailConnected ? "Connected — user@gmail.com" : "Not connected",
+          desc: gmailConnected ? "Connected" : "Not connected",
           connected: gmailConnected,
           loading: gmailConnecting,
           action: handleGmailToggle,
@@ -214,8 +297,8 @@ const Settings = () => {
     {
       title: "Notifications",
       items: [
-        { icon: Bell, label: "Push Notifications", desc: "Weekly digests, reviews", toggle: true, toggled: pushEnabled, action: handleTogglePush },
-        { icon: Bell, label: "Email Notifications", desc: "Monthly summaries", toggle: true, toggled: emailEnabled, action: handleToggleEmail },
+        { icon: Bell, label: "Push Notifications", desc: pushEnabled ? "Enabled" : "Disabled", toggle: true, toggled: pushEnabled, action: handleTogglePush },
+        { icon: Mail, label: "Email Notifications", desc: emailEnabled ? "Enabled" : "Disabled", toggle: true, toggled: emailEnabled, action: handleToggleEmail },
       ],
     },
     {
