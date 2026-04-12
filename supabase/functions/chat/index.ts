@@ -78,7 +78,7 @@ serve(async (req) => {
     const [factsRes, decisionsRes, patternsRes, identityRes, recentMemsRes, historyRes] = await Promise.all([
       supabase
         .from("memory_facts")
-        .select("subject, attribute, value, category, confidence")
+        .select("subject, attribute, value_text, category, confidence")
         .eq("user_id", user.id)
         .is("valid_until", null)
         .order("created_at", { ascending: false })
@@ -162,7 +162,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
 
     // Canonical facts
     if (facts.length > 0) {
-      const factLines = facts.map((f) => `- ${f.subject}: ${f.attribute} = ${f.value} [${f.category}, confidence: ${f.confidence}]`);
+      const factLines = facts.map((f) => `- ${f.subject}: ${f.attribute} = ${f.value_text} [${f.category}, confidence: ${f.confidence}]`);
       systemPrompt += `\n\n## CANONICAL FACTS (current truths about this user)\n${factLines.join("\n")}`;
     }
 
@@ -275,7 +275,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
                 user_id: user.id,
                 subject: fact.subject,
                 attribute: fact.attribute,
-                value: fact.value,
+                value_text: fact.value,
                 category: fact.category || "general",
                 source_type: "inferred",
               });
