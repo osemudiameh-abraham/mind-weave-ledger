@@ -84,7 +84,7 @@ const Library = () => {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
-                onClick={() => navigate("/home")}
+                onClick={() => navigate(`/home?section=${c.id}`)}
                 className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border hover:bg-muted transition-colors text-left"
               >
                 <MessageSquare size={16} className="text-muted-foreground flex-shrink-0" />

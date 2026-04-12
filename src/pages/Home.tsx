@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import TypewriterBubble from "@/components/TypewriterBubble";
@@ -28,6 +28,7 @@ const suggestions = [
 const Home = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { reminders, unseen, dueNow, addReminder, markSeen, markAllSeen, dismissReminder } = useReminders();
   const {
     sections,
@@ -44,6 +45,16 @@ const Home = () => {
 
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
   const { messages, loading: chatLoading, sendMessage, loadSection, newSection } = useChat();
+
+  // Load section from URL param (e.g. /home?section=uuid from Library)
+  useEffect(() => {
+    const sectionFromUrl = searchParams.get("section");
+    if (sectionFromUrl) {
+      setActiveSectionId(sectionFromUrl);
+      // Clear the param so it doesn't re-trigger on subsequent renders
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setActiveSectionId, setSearchParams]);
 
   // Toast for due reminders
   useEffect(() => {
