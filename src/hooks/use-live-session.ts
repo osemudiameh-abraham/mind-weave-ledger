@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { TranscriptEntry } from "@/components/live/LiveTranscript";
 import type { LiveService, LiveMessage, LiveSessionStatus } from "@/services/live/types";
-import { MockLiveService } from "@/services/live/MockLiveService";
+import { RealLiveService } from "@/services/live/RealLiveService";
 
 /**
  * Main Live session hook.
@@ -29,10 +29,12 @@ export const useLiveSession = () => {
   // Initialize service on mount
   useEffect(() => {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // BACKEND SWAP POINT: Replace MockLiveService 
-    // with your real service implementation here
+    // Phase 4: Real voice service
+    // STT: Browser SpeechRecognition
+    // LLM: Supabase chat Edge Function
+    // TTS: ElevenLabs → browser fallback
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    const service = new MockLiveService();
+    const service = new RealLiveService();
     serviceRef.current = service;
 
     service.connect({
