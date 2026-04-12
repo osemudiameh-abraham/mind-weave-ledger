@@ -34,7 +34,7 @@ const Vault = () => {
       setLoading(true);
       const { data } = await supabase
         .from("memory_facts")
-        .select("id, subject, attribute, value, category, source_type, created_at")
+        .select("id, subject, attribute, value_text, category, source_type, created_at")
         .eq("user_id", user.id)
         .is("valid_until", null)
         .order("created_at", { ascending: false });
@@ -44,7 +44,7 @@ const Vault = () => {
           data.map((f) => ({
             id: f.id,
             category: f.category || "general",
-            text: `${f.subject}: ${f.attribute} — ${f.value}`,
+            text: `${f.subject}: ${f.attribute} — ${f.value_text}`,
             source: f.source_type === "explicit" ? "Stated directly" : f.source_type === "corrected" ? "Corrected by you" : "Inferred from conversation",
             date: new Date(f.created_at).toLocaleDateString("en-GB", { month: "short", day: "numeric" }),
           }))
@@ -59,7 +59,7 @@ const Vault = () => {
 
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-3xl mx-auto">
+      <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
