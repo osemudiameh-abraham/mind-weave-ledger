@@ -16,7 +16,10 @@ async function embed(text: string, apiKey: string): Promise<number[] | null> {
     });
     const data = await res.json();
     return data.data?.[0]?.embedding || null;
-  } catch { return null; }
+  } catch (e) {
+    console.error("[EMBED] Failed to generate embedding:", e);
+    return null;
+  }
 }
 
 serve(async (req) => {
@@ -181,7 +184,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
       systemPrompt += `\n\n## DETECTED BEHAVIOUR PATTERNS\nUse these to warn or guide the user when relevant:\n${patternLines.join("\n")}`;
     }
 
-    // Semantically relevant memories (NEW — vector search results)
+    // Semantically relevant memories (vector search results)
     if (semanticMems.length > 0) {
       const semLines = semanticMems.map((m) => `- [${m.memory_type}] ${m.content} (relevance: ${(m.similarity * 100).toFixed(0)}%)`);
       systemPrompt += `\n\n## RELEVANT MEMORIES (semantically matched to current query)\n${semLines.join("\n")}`;
@@ -235,8 +238,9 @@ When you have relevant context about the user, USE IT naturally. Reference their
     });
 
     // ─── Extract facts from EVERY message — cognitive continuity means never missing a fact ───
+    // Production memory_facts schema requires these NOT NULL columns:
+    //   fact_key, subject, attribute, value_text, canonical_text, confidence, evidence_count, status
     {
-      // LLM extraction on every message (gpt-4o-mini, ~$0.001 per call)
       try {
         const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
@@ -255,38 +259,96 @@ When you have relevant context about the user, USE IT naturally. Reference their
           }),
         });
 
-        const extractData = await extractRes.json();
-        const rawFacts = extractData.choices?.[0]?.message?.content || "[]";
-        const cleanFacts = rawFacts.replace(/```json\n?|```/g, "").trim();
-        const extractedFacts = JSON.parse(cleanFacts);
+        if (!extractRes.ok) {
+          console.error("[FACT_EXTRACT] OpenAI API error:", extractRes.status, await extractRes.text());
+        } else {
+          const extractData = await extractRes.json();
+          const rawFacts = extractData.choices?.[0]?.message?.content || "[]";
+          const cleanFacts = rawFacts.replace(/```json\n?|```/g, "").trim();
+          console.log("[FACT_EXTRACT] Raw LLM output:", cleanFacts);
 
-        if (Array.isArray(extractedFacts)) {
-          for (const fact of extractedFacts) {
-            if (fact.subject && fact.attribute && fact.value) {
-              await supabase
+          let extractedFacts: { subject?: string; attribute?: string; value?: string; category?: string }[];
+          try {
+            extractedFacts = JSON.parse(cleanFacts);
+          } catch (parseErr) {
+            console.error("[FACT_EXTRACT] JSON parse failed:", parseErr, "Raw:", cleanFacts);
+            extractedFacts = [];
+          }
+
+          if (Array.isArray(extractedFacts)) {
+            console.log(`[FACT_EXTRACT] Extracted ${extractedFacts.length} facts from message`);
+
+            for (const fact of extractedFacts) {
+              if (!fact.subject || !fact.attribute || !fact.value) {
+                console.warn("[FACT_EXTRACT] Skipping incomplete fact:", JSON.stringify(fact));
+                continue;
+              }
+
+              // Build required NOT NULL fields
+              const factKey = `${fact.subject.toLowerCase().trim()}::${fact.attribute.toLowerCase().trim()}`;
+              const canonicalText = `${fact.subject} ${fact.attribute} is ${fact.value}`;
+              const category = fact.category || "general";
+
+              // Supersede any existing active fact with same subject+attribute
+              const { data: supersededData, error: supersededError } = await supabase
                 .from("memory_facts")
-                .update({ valid_until: new Date().toISOString() })
+                .update({
+                  valid_until: new Date().toISOString(),
+                  status: "superseded",
+                })
                 .eq("user_id", user.id)
                 .eq("subject", fact.subject)
                 .eq("attribute", fact.attribute)
-                .is("valid_until", null);
+                .is("valid_until", null)
+                .select("id");
 
-              await supabase.from("memory_facts").insert({
+              if (supersededError) {
+                console.error("[FACT_STORE] Supersede update failed:", supersededError.message, supersededError.details);
+              } else if (supersededData && supersededData.length > 0) {
+                console.log(`[FACT_STORE] Superseded ${supersededData.length} existing fact(s) for ${factKey}`);
+              }
+
+              const supersededId = supersededData?.[0]?.id || null;
+
+              // Insert the new canonical fact with ALL required NOT NULL columns
+              const { error: insertError } = await supabase.from("memory_facts").insert({
                 user_id: user.id,
+                fact_key: factKey,
                 subject: fact.subject,
                 attribute: fact.attribute,
                 value_text: fact.value,
-                category: fact.category || "general",
+                canonical_text: canonicalText,
+                category: category,
                 source_type: "inferred",
+                confidence: 0.8,
+                evidence_count: 1,
+                status: "active",
+                supersedes_fact_id: supersededId,
               });
+
+              if (insertError) {
+                console.error(
+                  "[FACT_STORE] INSERT failed:",
+                  insertError.message,
+                  insertError.details,
+                  insertError.hint,
+                  "Fact:", JSON.stringify({ factKey, subject: fact.subject, attribute: fact.attribute, value: fact.value })
+                );
+              } else {
+                console.log(`[FACT_STORE] Stored fact: ${factKey} = ${fact.value}`);
+              }
             }
+          } else {
+            console.warn("[FACT_EXTRACT] Extraction result is not an array:", typeof extractedFacts);
           }
         }
-      } catch { /* extraction failure is non-fatal */ }
+      } catch (extractionErr) {
+        console.error("[FACT_EXTRACT] Extraction pipeline failed:", extractionErr);
+      }
     }
 
     // Always store every user message as a memory with embedding
-    await supabase.from("memories_structured").insert({
+    const { error: memError } = await supabase.from("memories_structured").insert({
       user_id: user.id,
       content: message,
       memory_type: "chat",
@@ -295,6 +357,9 @@ When you have relevant context about the user, USE IT naturally. Reference their
       source_message_id: crypto.randomUUID(),
       embedding: queryEmbedding,
     });
+    if (memError) {
+      console.error("[MEMORY_STORE] Failed to store memory:", memError.message, memError.details);
+    }
 
     // ─── Decision detection ───
     const decisionSignals = /\b(i decided|i'm going to|i will|i've decided|my decision|i choose|i commit)\b/i;
@@ -323,18 +388,25 @@ When you have relevant context about the user, USE IT naturally. Reference their
         const decision = JSON.parse(clean);
 
         if (decision?.title) {
-          await supabase.from("decisions").insert({
+          const { error: decError } = await supabase.from("decisions").insert({
             user_id: user.id,
             title: decision.title,
             context_summary: decision.context || message.slice(0, 200),
             source_message_id: crypto.randomUUID(),
           });
+          if (decError) {
+            console.error("[DECISION_STORE] Failed:", decError.message, decError.details);
+          } else {
+            console.log(`[DECISION_STORE] Captured decision: ${decision.title}`);
+          }
         }
-      } catch { /* non-fatal */ }
+      } catch (decErr) {
+        console.error("[DECISION_EXTRACT] Pipeline failed:", decErr);
+      }
     }
 
     // ─── Governance trace ───
-    await supabase.from("memory_traces").insert({
+    const { error: traceError } = await supabase.from("memory_traces").insert({
       user_id: user.id,
       action_description: `Responded to: "${message.slice(0, 100)}"`,
       reasoning: `Context: ${facts.length} facts, ${decisions.length} decisions, ${patterns.length} patterns, ${recentMems.length} recent memories, ${semanticMems.length} semantic matches`,
@@ -343,6 +415,9 @@ When you have relevant context about the user, USE IT naturally. Reference their
       decision_ids: [],
       sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
     });
+    if (traceError) {
+      console.error("[TRACE_STORE] Failed:", traceError.message);
+    }
 
     return new Response(
       JSON.stringify({
@@ -359,6 +434,7 @@ When you have relevant context about the user, USE IT naturally. Reference their
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
+    console.error("[CHAT] Top-level error:", err);
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

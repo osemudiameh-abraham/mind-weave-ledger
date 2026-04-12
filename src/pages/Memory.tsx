@@ -21,7 +21,7 @@ const Memory = () => {
       const [decRes, patRes, factRes, outcomeRes] = await Promise.all([
         supabase.from("decisions").select("title, status, created_at, outcome_count").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
         supabase.from("behaviour_patterns").select("description, confidence, evidence_count, created_at").eq("user_id", user.id).order("confidence", { ascending: false }).limit(10),
-        supabase.from("memory_facts").select("subject, attribute, value, source_type, created_at, confidence").eq("user_id", user.id).is("valid_until", null).order("created_at", { ascending: false }).limit(10),
+        supabase.from("memory_facts").select("subject, attribute, value_text, source_type, created_at, confidence").eq("user_id", user.id).is("valid_until", null).order("created_at", { ascending: false }).limit(10),
         supabase.from("outcomes").select("outcome_label").eq("user_id", user.id),
       ]);
 
@@ -127,7 +127,7 @@ const Memory = () => {
             <div className="flex flex-col gap-2">
               {facts.map((f, i) => (
                 <div key={i} className="bg-card border border-border rounded-xl p-3">
-                  <p className="text-[13px] text-foreground">{f.subject}: {f.attribute} — {f.value}</p>
+                  <p className="text-[13px] text-foreground">{f.subject}: {f.attribute} — {f.value_text}</p>
                   <p className="text-[11px] text-muted-foreground mt-1">{f.source_type} · {formatDate(f.created_at)}</p>
                 </div>
               ))}
