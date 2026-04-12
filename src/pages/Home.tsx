@@ -14,6 +14,7 @@ import { useSections } from "@/hooks/use-sections";
 import { useTrialStatus } from "@/hooks/use-trial-status";
 import TrialOfferDialog from "@/components/TrialOfferDialog";
 import { useChat } from "@/hooks/use-chat";
+import { supabase } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 
 const suggestions = [
@@ -87,17 +88,65 @@ const Home = () => {
     return "Good night";
   };
 
-  const tips = [
-    "Tap the live button to start speaking with Seven — it's the fastest way to get to know each other.",
-    "Try asking me about your patterns — I'll track what matters to you over time.",
-    "Use the suggestion chips below to explore what Seven can do for you.",
-    "Check your Vault anytime to revisit saved insights and decisions.",
-    "Head to your Digest for a daily summary of your tracked patterns.",
+  // ─── Intelligent greeting context ───
+  const [greetingContext, setGreetingContext] = useState<{
+    pendingReviews: number;
+    latestFact: string | null;
+    weekMemories: number;
+    totalFacts: number;
+  }>({ pendingReviews: 0, latestFact: null, weekMemories: 0, totalFacts: 0 });
+
+  useEffect(() => {
+    const loadContext = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const userId = session.user.id;
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const [reviewsRes, factRes, memsRes, totalFactsRes] = await Promise.all([
+        supabase.from("decisions").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).in("status", ["active", "pending_review"])
+          .lte("review_due_at", new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()),
+        supabase.from("memory_facts").select("subject, attribute, value_text")
+          .eq("user_id", userId).is("valid_until", null)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("memories_structured").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).gte("captured_at", weekAgo),
+        supabase.from("memory_facts").select("id", { count: "exact", head: true })
+          .eq("user_id", userId).is("valid_until", null),
+      ]);
+
+      setGreetingContext({
+        pendingReviews: reviewsRes.count || 0,
+        latestFact: factRes.data ? `${factRes.data.subject} ${factRes.data.attribute}: ${factRes.data.value_text}` : null,
+        weekMemories: memsRes.count || 0,
+        totalFacts: totalFactsRes.count || 0,
+      });
+    };
+    loadContext();
+  }, []);
+
+  // Build tips: context-aware first, then generic
+  const contextTips: string[] = [];
+  if (greetingContext.pendingReviews > 0) {
+    contextTips.push(`You have ${greetingContext.pendingReviews} decision${greetingContext.pendingReviews === 1 ? "" : "s"} due for review. Want to check in?`);
+  }
+  if (greetingContext.totalFacts > 0) {
+    contextTips.push(`I know ${greetingContext.totalFacts} facts about you so far. The more you share, the sharper I get.`);
+  }
+  if (greetingContext.weekMemories > 0) {
+    contextTips.push(`You shared ${greetingContext.weekMemories} thoughts with me this week. I'm tracking patterns.`);
+  }
+
+  const genericTips = [
+    "Tell me about a decision you're facing — I'll track it and check back later.",
+    "Try asking me about your patterns — I'll surface what matters over time.",
+    "Check your Vault anytime to see everything I know about you.",
+    "Head to your Digest for a weekly summary of what I've learned.",
     "Seven learns from every conversation — the more you share, the sharper the insights.",
-    "Use the Library to browse all your past conversations and decisions.",
-    "Your Memory page shows everything Seven has learned about you so far.",
-    "Try reviewing a past decision — Seven can help you spot what went right or wrong.",
   ];
+
+  const tips = contextTips.length > 0 ? [...contextTips, ...genericTips] : genericTips;
 
   const [tipIndex, setTipIndex] = useState(0);
   const { displayed: tipText, done: tipDone } = useTypewriter(tips[tipIndex], 25);
@@ -152,7 +201,7 @@ const Home = () => {
             >
               {greeting()}, {userName}
               <br />
-              <span className="bg-gradient-to-r from-primary via-[hsl(250,80%,65%)] to-[hsl(280,75%,60%)] bg-clip-text text-transparent">where should we start?</span>
+              <span className="bg-gradient-to-r from-primary via-[hsl(250,80%,65%)] to-[hsl(280,75%,60%)] bg-clip-text text-transparent">{greetingContext.pendingReviews > 0 ? "you have decisions to check in on" : greetingContext.totalFacts > 0 ? "what's on your mind?" : "where should we start?"}</span>
             </motion.h1>
 
             <motion.p
