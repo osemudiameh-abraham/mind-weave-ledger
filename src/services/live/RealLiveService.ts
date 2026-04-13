@@ -242,6 +242,9 @@ export class RealLiveService implements LiveService {
 
   // Transcript accumulation
   private finalTranscriptParts: string[] = [];
+  // Architecture Section 4.6: 700ms turn-taking timer.
+  // On speech_final, wait 700ms before committing. If user speaks again, cancel and keep accumulating.
+  private turnTakingTimer: ReturnType<typeof setTimeout> | null = null;
 
   // TTS / AudioQueue
   private audioQueue: AudioQueue;
@@ -308,6 +311,11 @@ export class RealLiveService implements LiveService {
     this.audioQueue.flush();
     this.cancelStream();
     this.closeSTTConnection();
+
+    if (this.turnTakingTimer) {
+      clearTimeout(this.turnTakingTimer);
+      this.turnTakingTimer = null;
+    }
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -591,11 +599,27 @@ export class RealLiveService implements LiveService {
         this.finalTranscriptParts = [];
       }
 
+      // New speech arrived — cancel any pending turn-taking timer
+      if (this.turnTakingTimer) {
+        clearTimeout(this.turnTakingTimer);
+        this.turnTakingTimer = null;
+      }
+
       this.finalTranscriptParts.push(transcript.trim());
     }
 
     if (result.speech_final) {
-      this.commitTranscript();
+      // Architecture Section 4.6: start a 700ms silence timer before committing.
+      // If user speaks again within 700ms, the timer is cancelled above and
+      // speech is appended to the same utterance. This prevents cutting off
+      // users who pause briefly mid-sentence.
+      if (this.turnTakingTimer) {
+        clearTimeout(this.turnTakingTimer);
+      }
+      this.turnTakingTimer = setTimeout(() => {
+        this.turnTakingTimer = null;
+        this.commitTranscript();
+      }, 700);
     }
   }
 
