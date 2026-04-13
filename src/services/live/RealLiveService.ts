@@ -585,18 +585,37 @@ export class RealLiveService implements LiveService {
 
   private async speakOpenAI(text: string): Promise<boolean> {
     try {
-      const response = await supabase.functions.invoke("voice-tts", {
-        body: { text },
-      });
+      // Use fetch() directly instead of supabase.functions.invoke() because
+      // the Supabase JS client reads audio/mpeg responses as text, corrupting
+      // the binary data. Direct fetch gives us proper Blob handling.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (response.error || !response.data) {
-        return false;
-      }
+      if (!session?.access_token) return false;
 
-      const audioBlob =
-        response.data instanceof Blob
-          ? response.data
-          : new Blob([response.data], { type: "audio/mpeg" });
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/voice-tts`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: anonKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text }),
+        }
+      );
+
+      if (!response.ok) return false;
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("audio")) return false;
+
+      const audioBlob = await response.blob();
 
       return new Promise<boolean>((resolve) => {
         const audioUrl = URL.createObjectURL(audioBlob);
