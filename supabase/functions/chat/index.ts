@@ -107,10 +107,10 @@ serve(async (req) => {
         .maybeSingle(),
       supabase
         .from("memories_structured")
-        .select("content, memory_type, importance, captured_at")
+        .select("text, memory_type, importance, created_at")
         .eq("user_id", user.id)
         .order("importance", { ascending: false })
-        .order("captured_at", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(20),
       supabase
         .from("messages")
@@ -137,7 +137,7 @@ serve(async (req) => {
 
     // ─── Semantic memory search (wait for embedding) ───
     const queryEmbedding = await embeddingPromise;
-    let semanticMems: { content: string; memory_type: string; similarity: number }[] = [];
+    let semanticMems: { text: string; memory_type: string; similarity: number }[] = [];
 
     if (queryEmbedding) {
       try {
@@ -205,13 +205,13 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
 
     // Semantically relevant memories (vector search results)
     if (semanticMems.length > 0) {
-      const semLines = semanticMems.map((m) => `- ${m.content}`);
+      const semLines = semanticMems.map((m) => `- ${m.text}`);
       systemPrompt += `\n\n## RELEVANT PAST CONVERSATIONS (matched to what they're saying now)\n${semLines.join("\n")}`;
     }
 
     // Recent memories
     if (recentMems.length > 0) {
-      const memLines = recentMems.map((m) => `- ${m.content}`);
+      const memLines = recentMems.map((m) => `- ${m.text}`);
       systemPrompt += `\n\n## RECENT THINGS THEY'VE TOLD YOU\n${memLines.join("\n")}`;
     }
 
@@ -372,10 +372,9 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
     // Always store every user message as a memory with embedding
     const { error: memError } = await supabase.from("memories_structured").insert({
       user_id: user.id,
-      content: message,
+      text: message,
       memory_type: "chat",
       importance: 5,
-      source: "chat",
       source_message_id: crypto.randomUUID(),
       embedding: queryEmbedding,
     });
@@ -430,12 +429,17 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
     // ─── Governance trace ───
     const { error: traceError } = await supabase.from("memory_traces").insert({
       user_id: user.id,
-      action_description: `Responded to: "${message.slice(0, 100)}"`,
-      reasoning: `Context: ${facts.length} facts, ${decisions.length} decisions, ${patterns.length} patterns, ${recentMems.length} recent memories, ${semanticMems.length} semantic matches`,
-      memory_ids: [],
-      fact_ids: [],
-      decision_ids: [],
-      sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
+      query_text: message.slice(0, 500),
+      assistant_text: assistantContent.slice(0, 2000),
+      picked_memory_ids: [],
+      strategy_history: {
+        facts_loaded: facts.length,
+        decisions_loaded: decisions.length,
+        patterns_loaded: patterns.length,
+        recent_memories: recentMems.length,
+        semantic_matches: semanticMems.length,
+        sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
+      },
     });
     if (traceError) {
       console.error("[TRACE_STORE] Failed:", traceError.message);

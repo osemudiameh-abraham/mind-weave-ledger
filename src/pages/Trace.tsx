@@ -7,9 +7,9 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface TraceEntry {
   id: string;
-  action_description: string;
-  reasoning: string | null;
-  sources: string[];
+  query_text: string;
+  assistant_text: string;
+  strategy_history: { sources?: string[]; facts_loaded?: number; decisions_loaded?: number; patterns_loaded?: number; recent_memories?: number; semantic_matches?: number } | null;
   created_at: string;
 }
 
@@ -25,7 +25,7 @@ const Trace = () => {
       setLoading(true);
       const { data } = await supabase
         .from("memory_traces")
-        .select("id, action_description, reasoning, sources, created_at")
+        .select("id, query_text, assistant_text, strategy_history, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(30);
@@ -88,7 +88,7 @@ const Trace = () => {
                 >
                   <div className="flex-1 mr-3">
                     <p className="text-[14px] font-medium text-foreground leading-snug">
-                      {trace.action_description}
+                      {trace.query_text}
                     </p>
                     <span className="text-[11px] text-muted-foreground mt-1 block">
                       {timeAgo(trace.created_at)}
@@ -107,14 +107,14 @@ const Trace = () => {
                     animate={{ height: "auto", opacity: 1 }}
                     className="px-4 pb-4 border-t border-border"
                   >
-                    {trace.reasoning && (
+                    {trace.assistant_text && (
                       <p className="text-[13px] text-muted-foreground leading-relaxed mt-3 mb-3">
-                        {trace.reasoning}
+                        {trace.assistant_text.slice(0, 300)}{trace.assistant_text.length > 300 ? "…" : ""}
                       </p>
                     )}
-                    {trace.sources.length > 0 && (
+                    {trace.strategy_history?.sources && trace.strategy_history.sources.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        {trace.sources.map((src, j) => (
+                        {trace.strategy_history.sources.map((src: string, j: number) => (
                           <span
                             key={j}
                             className="px-2.5 py-1 rounded-full bg-muted text-[11px] text-muted-foreground"
