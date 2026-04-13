@@ -120,6 +120,20 @@ export class RealLiveService implements LiveService {
       console.error("[VOICE] SpeechRecognition error:", event.error);
       if (event.error === "not-allowed") {
         this.config?.onError("Microphone access denied. Please allow microphone access and try again.");
+        // Show error in transcript so user sees it
+        this.config?.onMessage({
+          id: `error-${Date.now()}`,
+          role: "ai",
+          text: "I can't access your microphone. Please allow microphone access in your browser settings and refresh the page. You can also type using the text input button.",
+          timestamp: Date.now(),
+        });
+      } else {
+        this.config?.onMessage({
+          id: `error-${Date.now()}`,
+          role: "ai",
+          text: `Voice recognition error: ${event.error}. Try refreshing the page or use the text input.`,
+          timestamp: Date.now(),
+        });
       }
     };
 

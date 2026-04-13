@@ -43,9 +43,12 @@ const Live = () => {
     onFrame: session.sendFrame,
   });
 
-  // Audio capture: streams mic audio to the service for STT
+  // Audio capture: disabled when using browser SpeechRecognition (RealLiveService)
+  // SpeechRecognition manages its own mic access internally.
+  // Volume visualization driven by session.speaking state in LiveAurora.
+  // Re-enable when upgrading to Deepgram WebSocket STT (sends raw audio).
   useAudioCapture({
-    active: session.micOn && session.alwaysListening,
+    active: false,
     onAudioData: session.sendAudio,
     onVolumeLevel: session.setVolumeLevel,
   });
