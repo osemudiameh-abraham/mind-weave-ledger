@@ -218,18 +218,21 @@ export class RealLiveService implements LiveService {
       body: {},
     });
 
-    if (tokenResponse.error || !tokenResponse.data?.url) {
-      const msg = tokenResponse.error?.message || "Failed to get voice token";
-      console.error("[VOICE] Token endpoint failed:", msg);
+    if (tokenResponse.error || !tokenResponse.data?.url || !tokenResponse.data?.key) {
+      const msg = tokenResponse.error?.message || tokenResponse.data?.error || "Failed to get voice token";
+      const detail = tokenResponse.data?.detail || "";
+      console.error("[VOICE] Token endpoint failed:", msg, detail);
       throw new Error(msg);
     }
 
     const deepgramUrl: string = tokenResponse.data.url;
+    const deepgramKey: string = tokenResponse.data.key;
     console.log("[VOICE] Got Deepgram URL from token endpoint");
 
     // Step 2: Connect directly to Deepgram from the browser.
-    // This avoids the Deno Deploy outgoing WebSocket limitation.
-    this.sttSocket = new WebSocket(deepgramUrl);
+    // Auth via WebSocket subprotocol ['token', key] — same approach as
+    // the official Deepgram JS SDK for browser connections.
+    this.sttSocket = new WebSocket(deepgramUrl, ["token", deepgramKey]);
     this.sttSocket.binaryType = "arraybuffer";
 
     // Wait for connection to open or fail

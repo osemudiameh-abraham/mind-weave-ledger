@@ -2,21 +2,12 @@
  * Voice STT Token Endpoint
  *
  * Architecture v5.5, Section 4.6:
- *   Deepgram Nova-2 provides sub-300ms first-word latency, 100+ language
- *   auto-detection, and WebSocket streaming. Server-side proxy protects the
- *   API key.
+ *   Returns a validated Deepgram API key and WebSocket URL for the client
+ *   to connect directly to Deepgram using subprotocol auth.
  *
- * Approach:
- *   POST /functions/v1/voice-stt  (authenticated)
- *   → validates Supabase JWT
- *   → returns { url: "wss://api.deepgram.com/v1/listen?..." } with API key
- *   → client connects directly to Deepgram using the returned URL
- *
- * The API key is embedded in the URL but:
- *   - Only accessible to authenticated users
- *   - Transmitted over TLS (wss://)
- *   - Can be rotated server-side without client changes
- *   - Deepgram keys can be scoped to usage:write only
+ * The Deepgram JS SDK uses `new WebSocket(url, ['token', apiKey])` for
+ * browser connections. This Edge Function validates auth and returns the
+ * key + URL for the client to use the same approach.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -29,13 +20,12 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // ─── CORS preflight ───
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // ─── Validate auth ───
+    // ─── Validate user auth ───
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -48,7 +38,6 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
 
     if (!supabaseUrl || !supabaseAnonKey) {
-      console.error("[voice-stt] Missing SUPABASE_URL or SUPABASE_ANON_KEY");
       return new Response(
         JSON.stringify({ error: "Server configuration error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -59,11 +48,7 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
@@ -71,23 +56,45 @@ serve(async (req) => {
       );
     }
 
-    // ─── Validate Deepgram API key ───
+    // ─── Get Deepgram API key ───
     const deepgramKey = Deno.env.get("DEEPGRAM_API_KEY");
     if (!deepgramKey) {
-      console.error("[voice-stt] Missing DEEPGRAM_API_KEY");
       return new Response(
-        JSON.stringify({ error: "STT service not configured" }),
+        JSON.stringify({ error: "DEEPGRAM_API_KEY not configured" }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // ─── Build Deepgram WebSocket URL ───
-    // Architecture v5.5, Section 4.6: Nova-2, 100+ language auto-detection,
-    // sub-300ms first-word latency.
-    // Auth via 'key' query parameter (Deepgram's documented auth method for
-    // environments that cannot set custom HTTP headers).
+    // ─── Validate the key against Deepgram REST API ───
+    let keyValid = false;
+    let keyError = "";
+    try {
+      const testResp = await fetch("https://api.deepgram.com/v1/projects", {
+        headers: { Authorization: `Token ${deepgramKey}` },
+      });
+      keyValid = testResp.ok;
+      if (!keyValid) {
+        const body = await testResp.text();
+        keyError = `Deepgram returned ${testResp.status}: ${body.slice(0, 200)}`;
+        console.error(`[voice-stt] Deepgram key validation failed: ${keyError}`);
+      }
+    } catch (e) {
+      keyError = `Deepgram validation request failed: ${e.message}`;
+      console.error(`[voice-stt] ${keyError}`);
+    }
+
+    if (!keyValid) {
+      return new Response(
+        JSON.stringify({
+          error: "Deepgram API key is invalid",
+          detail: keyError,
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ─── Build Deepgram WebSocket URL (without key — auth via subprotocol) ───
     const dgParams = new URLSearchParams({
-      key: deepgramKey,
       model: "nova-2",
       detect_language: "true",
       smart_format: "true",
@@ -101,10 +108,13 @@ serve(async (req) => {
 
     const dgUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
 
-    console.log(`[voice-stt] Token issued for user ${user.id.slice(0, 8)}…`);
+    console.log(`[voice-stt] Token issued for user ${user.id.slice(0, 8)}… (key validated)`);
 
+    // Return URL and key separately.
+    // Client uses: new WebSocket(url, ['token', key])
+    // This is the same approach as the Deepgram JS SDK for browsers.
     return new Response(
-      JSON.stringify({ url: dgUrl }),
+      JSON.stringify({ url: dgUrl, key: deepgramKey }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
