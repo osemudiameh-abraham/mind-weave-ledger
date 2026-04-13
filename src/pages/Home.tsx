@@ -280,7 +280,14 @@ const Home = () => {
         )}
       </div>
 
-      <ChatInput onSend={handleSend} onLive={() => navigate("/live")} />
+      <ChatInput onSend={handleSend} onLive={() => {
+        // Unlock mobile audio playback — must happen in a user gesture handler.
+        // Without this, TTS audio.play() silently fails on iOS/Android browsers.
+        const silence = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+        silence.volume = 0;
+        silence.play().catch(() => {});
+        navigate("/live");
+      }} />
       <BottomNav />
 
       <TrialOfferDialog

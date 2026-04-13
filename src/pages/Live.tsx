@@ -25,6 +25,24 @@ const Live = () => {
     setIsInLiveSession(true);
     return () => setIsInLiveSession(false);
   }, [setIsInLiveSession]);
+
+  // Unlock mobile audio playback on first user interaction.
+  // Mobile browsers block audio.play() unless triggered by a user gesture.
+  // The Home page unlocks audio when tapping "Live", but this fallback
+  // handles direct URL navigation or refresh.
+  useEffect(() => {
+    const unlock = () => {
+      const silence = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+      silence.volume = 0;
+      silence.play().catch(() => {});
+    };
+    document.addEventListener("touchstart", unlock, { once: true });
+    document.addEventListener("click", unlock, { once: true });
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("click", unlock);
+    };
+  }, []);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
 
