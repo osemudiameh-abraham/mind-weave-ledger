@@ -267,6 +267,11 @@ export class RealLiveService implements LiveService {
 
       const aiText = data.response;
 
+      // Log context diagnostics
+      if (data.context_used) {
+        console.log("[VOICE] Context loaded:", JSON.stringify(data.context_used));
+      }
+
       // Emit AI response
       this.config?.onMessage({
         id: `ai-${Date.now()}`,

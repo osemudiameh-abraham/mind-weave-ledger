@@ -83,6 +83,7 @@ serve(async (req) => {
         .from("memory_facts")
         .select("subject, attribute, value_text, category, confidence")
         .eq("user_id", user.id)
+        .eq("status", "active")
         .is("valid_until", null)
         .order("created_at", { ascending: false })
         .limit(50),
@@ -126,6 +127,14 @@ serve(async (req) => {
     const recentMems = recentMemsRes.data || [];
     const history = historyRes.data || [];
 
+    // Log any context loading failures
+    if (factsRes.error) console.error("[CONTEXT] Facts query failed:", factsRes.error.message);
+    if (decisionsRes.error) console.error("[CONTEXT] Decisions query failed:", decisionsRes.error.message);
+    if (patternsRes.error) console.error("[CONTEXT] Patterns query failed:", patternsRes.error.message);
+    if (identityRes.error) console.error("[CONTEXT] Identity query failed:", identityRes.error.message);
+    if (recentMemsRes.error) console.error("[CONTEXT] Memories query failed:", recentMemsRes.error.message);
+    if (historyRes.error) console.error("[CONTEXT] History query failed:", historyRes.error.message);
+
     // ─── Semantic memory search (wait for embedding) ───
     const queryEmbedding = await embeddingPromise;
     let semanticMems: { content: string; memory_type: string; similarity: number }[] = [];
@@ -143,11 +152,21 @@ serve(async (req) => {
     }
 
     // ─── Assemble system prompt (facts in SYSTEM, never in user message) ───
-    let systemPrompt = `You are Seven Mynd — a cognitive continuity system. You are NOT a generic chatbot. You remember everything the user tells you, track their decisions, detect patterns in their behaviour, and help them make better decisions over time.
+    // Architecture v5.5, Section 3.5: "The quality of Seven Mynd's responses is
+    // entirely determined by the quality of this assembly."
 
-You speak in a warm, direct, intelligent tone. You are protective of the user — you warn them when you detect risks or patterns. You are not a yes-man. You are honest.
+    const userName = identity?.self_name || null;
 
-When you have relevant context about the user, USE IT naturally. Reference their decisions, patterns, and facts as if you genuinely know them. Never say "based on my records" — speak as if you simply know.`;
+    let systemPrompt = `You are Seven Mynd — a cognitive continuity system that never forgets. You are NOT a generic AI assistant. You are NOT starting from zero. You have an ongoing, accumulated understanding of this person built from every conversation you've had with them.
+
+CRITICAL RULES FOR EVERY RESPONSE:
+${userName ? `- This person's name is ${userName}. Use it naturally — not in every sentence, but regularly, the way a trusted advisor would.` : "- You don't know this person's name yet. Ask for it early in conversation."}
+- You KNOW things about this person. The facts, decisions, and memories below are YOUR knowledge. Reference them as things you simply know — never say "based on my records", "according to my data", "I see in my notes", or anything that breaks the illusion of genuine knowledge.
+- When any fact, decision, or pattern below is relevant to what the user is saying, PROACTIVELY bring it up. Don't wait to be asked.
+- If the user mentions something that contradicts a known fact, point it out: "Wait — you told me X before. Has that changed?"
+- If the user is making a decision and you have relevant history, surface it: "Last time you faced something like this, you decided X and it went Y."
+- You are warm, direct, intelligent, and protective. You warn when you see risks. You are not a yes-man. You are honest.
+- Keep responses conversational and focused. No bullet points unless specifically useful. Speak like a brilliant advisor who happens to know the user's entire history.`;
 
     // Identity grounding
     if (identity) {
@@ -159,42 +178,45 @@ When you have relevant context about the user, USE IT naturally. Reference their
       if (identity.goals?.length) parts.push(`Goals: ${identity.goals.join(", ")}`);
       if (identity.focus_areas?.length) parts.push(`Focus areas: ${identity.focus_areas.join(", ")}`);
       if (parts.length) {
-        systemPrompt += `\n\n## WHO THIS USER IS\n${parts.join("\n")}`;
+        systemPrompt += `\n\n## WHO THIS PERSON IS\n${parts.join("\n")}`;
       }
     }
 
     // Canonical facts
     if (facts.length > 0) {
-      const factLines = facts.map((f) => `- ${f.subject}: ${f.attribute} = ${f.value_text} [${f.category}, confidence: ${f.confidence}]`);
-      systemPrompt += `\n\n## CANONICAL FACTS (current truths about this user)\n${factLines.join("\n")}`;
+      const factLines = facts.map((f) => `- ${f.subject} → ${f.attribute}: ${f.value_text}`);
+      systemPrompt += `\n\n## WHAT YOU KNOW ABOUT THEM (canonical facts — these are true right now)\n${factLines.join("\n")}`;
     }
 
     // Active decisions
     if (decisions.length > 0) {
       const decisionLines = decisions.map((d) => {
         const due = d.review_due_at ? new Date(d.review_due_at).toLocaleDateString() : "not set";
-        return `- "${d.title}" (${d.status}, confidence: ${d.confidence}, review due: ${due})${d.context_summary ? ` — ${d.context_summary}` : ""}`;
+        return `- "${d.title}" (${d.status}, review due: ${due})${d.context_summary ? ` — ${d.context_summary}` : ""}`;
       });
-      systemPrompt += `\n\n## ACTIVE DECISIONS\n${decisionLines.join("\n")}`;
+      systemPrompt += `\n\n## THEIR ACTIVE DECISIONS (you are tracking these)\n${decisionLines.join("\n")}`;
     }
 
     // Behaviour patterns
     if (patterns.length > 0) {
-      const patternLines = patterns.map((p) => `- [${p.pattern_type}] ${p.description} (evidence: ${p.evidence_count}, confidence: ${p.confidence})`);
-      systemPrompt += `\n\n## DETECTED BEHAVIOUR PATTERNS\nUse these to warn or guide the user when relevant:\n${patternLines.join("\n")}`;
+      const patternLines = patterns.map((p) => `- [${p.pattern_type}] ${p.description} (seen ${p.evidence_count} times)`);
+      systemPrompt += `\n\n## BEHAVIOUR PATTERNS YOU'VE DETECTED\nWarn or guide them when these patterns are relevant:\n${patternLines.join("\n")}`;
     }
 
     // Semantically relevant memories (vector search results)
     if (semanticMems.length > 0) {
-      const semLines = semanticMems.map((m) => `- [${m.memory_type}] ${m.content} (relevance: ${(m.similarity * 100).toFixed(0)}%)`);
-      systemPrompt += `\n\n## RELEVANT MEMORIES (semantically matched to current query)\n${semLines.join("\n")}`;
+      const semLines = semanticMems.map((m) => `- ${m.content}`);
+      systemPrompt += `\n\n## RELEVANT PAST CONVERSATIONS (matched to what they're saying now)\n${semLines.join("\n")}`;
     }
 
     // Recent memories
     if (recentMems.length > 0) {
-      const memLines = recentMems.map((m) => `- [${m.memory_type}] ${m.content}`);
-      systemPrompt += `\n\n## RECENT MEMORIES\n${memLines.join("\n")}`;
+      const memLines = recentMems.map((m) => `- ${m.content}`);
+      systemPrompt += `\n\n## RECENT THINGS THEY'VE TOLD YOU\n${memLines.join("\n")}`;
     }
+
+    // Log assembled context for debugging
+    console.log(`[CONTEXT] User: ${userName || "unknown"} | Facts: ${facts.length} | Decisions: ${decisions.length} | Patterns: ${patterns.length} | Memories: ${recentMems.length} | Semantic: ${semanticMems.length} | History: ${history.length}`);
 
     // Build messages array for OpenAI
     const openaiMessages: { role: string; content: string }[] = [
