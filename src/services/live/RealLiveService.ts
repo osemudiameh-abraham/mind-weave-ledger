@@ -348,11 +348,9 @@ export class RealLiveService implements LiveService {
   }
 
   sendAudio(audioData: Float32Array, _sampleRate: number): void {
-    // Architecture Section 4.6: Keep sending audio to Deepgram during TTS.
-    // Do NOT block. Transcripts are discarded in handleTranscriptResult instead.
-    // Only block during cooldown period (500ms after TTS ends).
-    if (Date.now() < this.ttsCooldownUntil) return;
-
+    // Architecture Section 4.6: ALWAYS send audio to Deepgram — never block.
+    // Echo prevention is handled by discarding transcripts in handleTranscriptResult.
+    // Blocking audio here causes the first part of user speech to be lost.
     if (
       !this.sttSocket ||
       this.sttSocket.readyState !== WebSocket.OPEN ||
