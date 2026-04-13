@@ -67,10 +67,12 @@ type DeepgramMessage = DeepgramResult | DeepgramUtteranceEnd | DeepgramError;
 // ─── AudioQueue: sequential sentence-level TTS playback (Section 4.7) ───
 
 class AudioQueue {
-  private queue: string[] = [];
+  // Pipeline: each entry is a TTS fetch already in-flight, not just text.
+  // When sentence 2 is enqueued while sentence 1 is playing, the TTS fetch
+  // for sentence 2 starts immediately. No gap between sentences.
+  private queue: { audioPromise: Promise<Blob | null>; controller: AbortController }[] = [];
   private isPlaying = false;
   private currentAudio: HTMLAudioElement | null = null;
-  private abortControllers: AbortController[] = [];
   private onSpeakingChange: (speaking: boolean) => void;
   private onFinished: () => void;
 
@@ -83,7 +85,11 @@ class AudioQueue {
   }
 
   enqueue(sentence: string): void {
-    this.queue.push(sentence);
+    // Start TTS fetch IMMEDIATELY — don't wait for current sentence to finish
+    const controller = new AbortController();
+    const audioPromise = this.fetchTTS(sentence, controller.signal);
+    this.queue.push({ audioPromise, controller });
+
     if (!this.isPlaying) {
       this.isPlaying = true;
       this.onSpeakingChange(true);
@@ -92,11 +98,10 @@ class AudioQueue {
   }
 
   flush(): void {
-    this.queue = [];
-    for (const c of this.abortControllers) {
-      try { c.abort(); } catch { /* ignore */ }
+    for (const entry of this.queue) {
+      try { entry.controller.abort(); } catch { /* ignore */ }
     }
-    this.abortControllers = [];
+    this.queue = [];
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio.currentTime = 0;
@@ -118,28 +123,22 @@ class AudioQueue {
       return;
     }
 
-    const sentence = this.queue.shift()!;
-    const controller = new AbortController();
-    this.abortControllers.push(controller);
+    const entry = this.queue.shift()!;
 
     try {
-      const audioBlob = await this.fetchTTS(sentence, controller.signal);
-      // Remove this controller from the list
-      this.abortControllers = this.abortControllers.filter((c) => c !== controller);
+      // Audio is already being fetched (or already fetched) — just await it
+      const audioBlob = await entry.audioPromise;
 
       if (audioBlob) {
         await this.playAudio(audioBlob);
       }
     } catch (err: unknown) {
-      this.abortControllers = this.abortControllers.filter((c) => c !== controller);
       if (err instanceof DOMException && err.name === "AbortError") {
-        // Barge-in — expected, not an error
         return;
       }
       console.error("[AudioQueue] TTS error, skipping sentence:", err);
     }
 
-    // Play next sentence (or finish)
     this.playNext();
   }
 
