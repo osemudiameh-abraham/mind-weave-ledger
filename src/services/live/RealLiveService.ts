@@ -2,19 +2,13 @@
  * Real Live Service — Deepgram Nova-2 STT + Chat Edge Function + TTS
  *
  * Architecture v5.5, Part IV:
- *   - STT: Deepgram Nova-2 via voice-stt WebSocket proxy (Section 4.6)
+ *   - STT: Deepgram Nova-2 via token endpoint + direct browser WebSocket (Section 4.6)
  *   - LLM: Same chat Edge Function as typed messages (Section 4.8)
- *   - TTS: ElevenLabs via voice-tts Edge Function, browser fallback (Section 4.7 — OpenAI TTS in Priority 3)
+ *   - TTS: ElevenLabs via voice-tts Edge Function, browser fallback (Section 4.7)
  *
  * Voice state machine (Section 4.2):
  *   idle → listening → thinking → speaking → listening (loop)
  *   Barge-in: user speaks during speaking → stop TTS, return to listening
- *
- * Audio pipeline:
- *   Mic → use-audio-capture hook → sendAudio(Float32, rate)
- *   → convert Float32 → Int16 PCM → WebSocket → proxy → Deepgram
- *   → transcripts returned → parse → processMessage() → chat Edge Function
- *   → TTS response → audio playback
  */
 
 import type {
@@ -60,10 +54,7 @@ interface DeepgramError {
   description: string;
 }
 
-type DeepgramMessage =
-  | DeepgramResult
-  | DeepgramUtteranceEnd
-  | DeepgramError;
+type DeepgramMessage = DeepgramResult | DeepgramUtteranceEnd | DeepgramError;
 
 // ─── Service implementation ───
 
@@ -76,19 +67,27 @@ export class RealLiveService implements LiveService {
   // Deepgram WebSocket
   private sttSocket: WebSocket | null = null;
   private sttReady = false;
+  private isConnecting = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Keepalive: Deepgram closes the connection after ~12s of no audio.
+  // We send {"type":"KeepAlive"} every 8s to prevent this.
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+
   // Transcript accumulation
-  // Deepgram sends multiple is_final segments per utterance.
-  // We accumulate them until speech_final or UtteranceEnd.
   private finalTranscriptParts: string[] = [];
 
   // TTS state
   private currentAudio: HTMLAudioElement | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private isSpeaking = false;
+  // After TTS ends, mute audio for a cooldown period to prevent echo pickup.
+  // Browser echoCancellation isn't perfect — residual TTS audio from speakers
+  // gets transcribed as user input without this guard.
+  private ttsCooldownUntil = 0;
+  private static TTS_COOLDOWN_MS = 800;
 
   // Media & session state
   private mediaState = { camera: false, screen: false, mic: true };
@@ -147,7 +146,6 @@ export class RealLiveService implements LiveService {
   sendText(text: string): void {
     if (!this.config) return;
 
-    // Barge-in
     if (this.isSpeaking) {
       this.stopTTS();
     }
@@ -163,10 +161,8 @@ export class RealLiveService implements LiveService {
   }
 
   sendAudio(audioData: Float32Array, _sampleRate: number): void {
-    // Don't send audio during TTS playback to prevent feedback loop.
-    // Architecture v5.5, Section 4.6: echo prevention by muting the
-    // Deepgram audio stream during TTS.
-    if (this.isSpeaking) return;
+    // Don't send audio during TTS or cooldown period to prevent feedback loop.
+    if (this.isSpeaking || Date.now() < this.ttsCooldownUntil) return;
 
     // Don't send if WebSocket not ready
     if (
@@ -178,10 +174,8 @@ export class RealLiveService implements LiveService {
     }
 
     // Convert Float32 [-1.0, 1.0] → Int16 [-32768, 32767]
-    // Deepgram expects linear16 encoding.
     const int16 = float32ToInt16(audioData);
 
-    // Send as binary frame
     try {
       this.sttSocket.send(int16.buffer);
     } catch (err) {
@@ -190,8 +184,7 @@ export class RealLiveService implements LiveService {
   }
 
   sendFrame(_frameBase64: string): void {
-    // Visual analysis will be implemented with Gemini 2.0 Flash in Priority 8.
-    // For now, frames are captured but not processed.
+    // Visual analysis: Priority 8 (Gemini 2.0 Flash)
   }
 
   setMediaState(state: {
@@ -200,8 +193,6 @@ export class RealLiveService implements LiveService {
     mic?: boolean;
   }): void {
     Object.assign(this.mediaState, state);
-    // Mic mute/unmute is handled by the use-audio-capture hook's active state.
-    // When mic is off, the hook stops capturing, so no audio arrives at sendAudio().
   }
 
   getStatus(): LiveSessionStatus {
@@ -211,103 +202,162 @@ export class RealLiveService implements LiveService {
   // ─── PRIVATE: STT WebSocket Connection ───
 
   private async openSTTConnection(): Promise<void> {
-    // Step 1: Get Deepgram WebSocket URL from the token endpoint.
-    // The Edge Function validates auth and returns a URL with the API key
-    // embedded. The API key never appears in client-side code.
-    const tokenResponse = await supabase.functions.invoke("voice-stt", {
-      body: {},
-    });
-
-    if (tokenResponse.error || !tokenResponse.data?.url || !tokenResponse.data?.key) {
-      const msg = tokenResponse.error?.message || tokenResponse.data?.error || "Failed to get voice token";
-      const detail = tokenResponse.data?.detail || "";
-      console.error("[VOICE] Token endpoint failed:", msg, detail);
-      throw new Error(msg);
+    // Guard against duplicate connection attempts
+    if (this.isConnecting) {
+      console.log("[VOICE] Connection already in progress, skipping");
+      return;
     }
+    this.isConnecting = true;
 
-    const deepgramUrl: string = tokenResponse.data.url;
-    const deepgramKey: string = tokenResponse.data.key;
-    console.log("[VOICE] Got Deepgram URL from token endpoint");
+    try {
+      // Step 1: Get Deepgram URL + key from token endpoint
+      const tokenResponse = await supabase.functions.invoke("voice-stt", {
+        body: {},
+      });
 
-    // Step 2: Connect directly to Deepgram from the browser.
-    // Auth via WebSocket subprotocol ['token', key] — same approach as
-    // the official Deepgram JS SDK for browser connections.
-    this.sttSocket = new WebSocket(deepgramUrl, ["token", deepgramKey]);
-    this.sttSocket.binaryType = "arraybuffer";
+      if (
+        tokenResponse.error ||
+        !tokenResponse.data?.url ||
+        !tokenResponse.data?.key
+      ) {
+        const msg =
+          tokenResponse.error?.message ||
+          tokenResponse.data?.error ||
+          "Failed to get voice token";
+        const detail = tokenResponse.data?.detail || "";
+        console.error("[VOICE] Token endpoint failed:", msg, detail);
+        throw new Error(msg);
+      }
 
-    // Wait for connection to open or fail
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(
-          new Error(
-            "Voice connection timed out. Check your internet and try again."
-          )
-        );
-      }, 15000);
+      const deepgramUrl: string = tokenResponse.data.url;
+      const deepgramKey: string = tokenResponse.data.key;
+      console.log("[VOICE] Got Deepgram URL from token endpoint");
 
-      this.sttSocket!.onopen = () => {
-        clearTimeout(timeout);
-        console.log("[VOICE] Connected directly to Deepgram Nova-2");
-        this.sttReady = true;
-        this.reconnectAttempts = 0;
-        resolve();
-      };
+      // Close any existing socket before opening a new one
+      if (this.sttSocket) {
+        try {
+          this.sttSocket.close(1000);
+        } catch {
+          /* ignore */
+        }
+        this.sttSocket = null;
+      }
 
-      this.sttSocket!.onerror = () => {
-        clearTimeout(timeout);
-        console.error("[VOICE] Deepgram WebSocket error");
-        reject(new Error("Voice connection failed."));
-      };
+      // Step 2: Connect directly to Deepgram with subprotocol auth
+      this.sttSocket = new WebSocket(deepgramUrl, ["token", deepgramKey]);
+      this.sttSocket.binaryType = "arraybuffer";
 
-      this.sttSocket!.onclose = (event: CloseEvent) => {
-        clearTimeout(timeout);
-        // If we haven't resolved yet, this is a connection failure
-        if (!this.sttReady) {
+      // Wait for connection to open or fail
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
           reject(
             new Error(
-              `Voice connection closed: code=${event.code} ${event.reason}`
+              "Voice connection timed out. Check your internet and try again."
             )
           );
+        }, 15000);
+
+        this.sttSocket!.onopen = () => {
+          clearTimeout(timeout);
+          console.log("[VOICE] Connected directly to Deepgram Nova-2");
+          this.sttReady = true;
+          this.reconnectAttempts = 0;
+          resolve();
+        };
+
+        this.sttSocket!.onerror = () => {
+          clearTimeout(timeout);
+          console.error("[VOICE] Deepgram WebSocket error");
+          reject(new Error("Voice connection failed."));
+        };
+
+        this.sttSocket!.onclose = (event: CloseEvent) => {
+          clearTimeout(timeout);
+          if (!this.sttReady) {
+            reject(
+              new Error(
+                `Voice connection closed: code=${event.code} ${event.reason}`
+              )
+            );
+          }
+        };
+      });
+
+      // Set up persistent event handlers after successful connection
+      this.sttSocket.onmessage = (event: MessageEvent) => {
+        this.handleSTTMessage(event.data);
+      };
+
+      this.sttSocket.onerror = () => {
+        console.error("[VOICE] Deepgram WebSocket error");
+      };
+
+      this.sttSocket.onclose = (event: CloseEvent) => {
+        console.log(
+          `[VOICE] Deepgram closed: code=${event.code} reason=${event.reason}`
+        );
+        this.sttReady = false;
+        this.stopKeepalive();
+
+        // Only reconnect for unexpected disconnects, NOT for idle timeouts.
+        // Code 1011 = "Deepgram did not receive audio data" — this is normal
+        // when mic is denied or during extended TTS. Don't spam reconnects.
+        if (this.shouldBeConnected && event.code !== 1011) {
+          this.attemptReconnect();
+        } else if (this.shouldBeConnected && event.code === 1011) {
+          console.log(
+            "[VOICE] Deepgram idle timeout — will reconnect when audio resumes"
+          );
+          // Don't reconnect immediately. The audio capture hook will trigger
+          // a reconnect when mic becomes available and audio starts flowing.
         }
       };
-    });
 
-    // Now that connection is open, set up persistent event handlers
-    this.sttSocket.onmessage = (event: MessageEvent) => {
-      this.handleSTTMessage(event.data);
-    };
+      // Start keepalive timer
+      this.startKeepalive();
+    } finally {
+      this.isConnecting = false;
+    }
+  }
 
-    this.sttSocket.onerror = () => {
-      console.error("[VOICE] Deepgram WebSocket error");
-    };
-
-    this.sttSocket.onclose = (event: CloseEvent) => {
-      console.log(
-        `[VOICE] Deepgram closed: code=${event.code} reason=${event.reason}`
-      );
-      this.sttReady = false;
-
-      // Attempt reconnection if we should still be connected
-      if (this.shouldBeConnected) {
-        this.attemptReconnect();
+  private startKeepalive(): void {
+    this.stopKeepalive();
+    // Send KeepAlive every 8 seconds to prevent Deepgram's ~12s idle timeout
+    this.keepaliveTimer = setInterval(() => {
+      if (
+        this.sttSocket &&
+        this.sttSocket.readyState === WebSocket.OPEN
+      ) {
+        try {
+          this.sttSocket.send(JSON.stringify({ type: "KeepAlive" }));
+        } catch {
+          // Ignore — if send fails, onclose will handle it
+        }
       }
-    };
+    }, 8000);
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   private closeSTTConnection(): void {
+    this.stopKeepalive();
     if (this.sttSocket) {
-      // Send CloseStream to Deepgram to finalize any pending transcription
       if (this.sttSocket.readyState === WebSocket.OPEN) {
         try {
           this.sttSocket.send(JSON.stringify({ type: "CloseStream" }));
         } catch {
-          // Ignore — closing anyway
+          /* ignore */
         }
       }
       try {
         this.sttSocket.close(1000, "Client disconnected");
       } catch {
-        // Ignore
+        /* ignore */
       }
       this.sttSocket = null;
     }
@@ -315,6 +365,7 @@ export class RealLiveService implements LiveService {
   }
 
   private attemptReconnect(): void {
+    if (this.isConnecting) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error("[VOICE] Max reconnection attempts reached");
       this.status = "error";
@@ -326,7 +377,6 @@ export class RealLiveService implements LiveService {
     }
 
     this.reconnectAttempts++;
-    // Exponential backoff: 1s, 2s, 4s (capped at 8s)
     const delay = Math.min(
       1000 * Math.pow(2, this.reconnectAttempts - 1),
       8000
@@ -343,26 +393,39 @@ export class RealLiveService implements LiveService {
         this.config?.onStatusChange("connected");
       } catch (err) {
         console.error("[VOICE] Reconnection failed:", err);
-        // onclose handler will trigger another attemptReconnect
       }
     }, delay);
+  }
+
+  /**
+   * Called by sendAudio when audio starts flowing after a Deepgram idle timeout.
+   * Re-establishes the connection so transcription can resume.
+   */
+  private ensureConnected(): void {
+    if (
+      this.shouldBeConnected &&
+      this.sttReady === false &&
+      !this.isConnecting &&
+      !this.reconnectTimer
+    ) {
+      console.log("[VOICE] Audio flowing — reconnecting to Deepgram");
+      this.reconnectAttempts = 0;
+      this.attemptReconnect();
+    }
   }
 
   // ─── PRIVATE: STT Message Handling ───
 
   private handleSTTMessage(data: string | ArrayBuffer): void {
-    // Deepgram sends JSON text messages; binary messages are not expected
     if (typeof data !== "string") return;
 
     let msg: DeepgramMessage;
     try {
       msg = JSON.parse(data);
     } catch {
-      console.warn("[VOICE] Failed to parse STT message");
       return;
     }
 
-    // Deepgram error
     if (msg.type === "Error") {
       const dgErr = msg as DeepgramError;
       console.error(
@@ -374,13 +437,11 @@ export class RealLiveService implements LiveService {
       return;
     }
 
-    // Deepgram transcript result
     if (msg.type === "Results") {
       this.handleTranscriptResult(msg as DeepgramResult);
       return;
     }
 
-    // Deepgram utterance end (silence-based endpoint after utterance_end_ms)
     if (msg.type === "UtteranceEnd") {
       this.commitTranscript();
       return;
@@ -393,19 +454,12 @@ export class RealLiveService implements LiveService {
 
     const transcript = alt.transcript;
 
-    // Interim results (is_final: false) — useful for real-time UI feedback.
-    // We don't process these as user input. Future: display in LiveTranscript.
-    if (!result.is_final) {
-      return;
-    }
+    if (!result.is_final) return;
 
-    // Final result — accumulate this segment
     if (transcript.trim()) {
       this.finalTranscriptParts.push(transcript.trim());
     }
 
-    // speech_final: Deepgram detected an utterance boundary.
-    // Fires sooner than UtteranceEnd for faster response latency.
     if (result.speech_final) {
       this.commitTranscript();
     }
@@ -419,12 +473,10 @@ export class RealLiveService implements LiveService {
 
     if (!fullText) return;
 
-    // Barge-in: stop TTS if playing
     if (this.isSpeaking) {
       this.stopTTS();
     }
 
-    // Emit user message to UI
     this.config?.onMessage({
       id: `user-${Date.now()}`,
       role: "user",
@@ -432,7 +484,6 @@ export class RealLiveService implements LiveService {
       timestamp: Date.now(),
     });
 
-    // Process through LLM — same pipeline as typed chat (Section 4.8)
     this.processMessage(fullText);
   }
 
@@ -441,12 +492,9 @@ export class RealLiveService implements LiveService {
   private async processMessage(text: string): Promise<void> {
     if (!this.config) return;
 
-    // Indicate thinking state
     this.config.onSpeakingChange(false);
 
     try {
-      // Architecture v5.5, Section 4.8: Voice hits the SAME chat endpoint
-      // as typed messages. metadata.source = 'voice' for traceability.
       const response = await supabase.functions.invoke("chat", {
         body: {
           message: text,
@@ -466,7 +514,6 @@ export class RealLiveService implements LiveService {
 
       const aiText: string = data.response;
 
-      // Log context diagnostics
       if (data.context_used) {
         console.log(
           "[VOICE] Context loaded:",
@@ -474,7 +521,6 @@ export class RealLiveService implements LiveService {
         );
       }
 
-      // Emit AI response to UI
       this.config?.onMessage({
         id: `ai-${Date.now()}`,
         role: "ai",
@@ -482,7 +528,6 @@ export class RealLiveService implements LiveService {
         timestamp: Date.now(),
       });
 
-      // Speak the response via TTS
       this.speak(aiText);
     } catch (err) {
       console.error("[VOICE] Process message failed:", err);
@@ -491,25 +536,27 @@ export class RealLiveService implements LiveService {
   }
 
   // ─── PRIVATE: TTS ───
-  // NOTE: Priority 3 replaces ElevenLabs with OpenAI TTS (tts-1-hd, nova voice).
-  // Current implementation preserved for continuity.
 
   private async speak(text: string): Promise<void> {
     this.isSpeaking = true;
     this.config?.onSpeakingChange(true);
 
-    // Audio stream is muted during TTS via the isSpeaking check in sendAudio().
-    // This prevents the feedback loop where Deepgram transcribes TTS output.
+    // Clear any pending transcript parts that accumulated during TTS setup
+    this.finalTranscriptParts = [];
 
-    // Try ElevenLabs first, fall back to browser speechSynthesis
     const ttsSuccess = await this.speakElevenLabs(text);
     if (!ttsSuccess) {
       await this.speakBrowser(text);
     }
 
-    // TTS complete — resume accepting audio
+    // TTS complete. Start cooldown period before accepting audio again.
+    // This prevents residual speaker echo from being transcribed.
+    this.ttsCooldownUntil = Date.now() + RealLiveService.TTS_COOLDOWN_MS;
     this.isSpeaking = false;
     this.config?.onSpeakingChange(false);
+
+    // Clear any transcript parts that may have leaked through during TTS
+    this.finalTranscriptParts = [];
   }
 
   private async speakElevenLabs(text: string): Promise<boolean> {
@@ -522,7 +569,6 @@ export class RealLiveService implements LiveService {
         return false;
       }
 
-      // Response should be audio blob
       const audioBlob =
         response.data instanceof Blob
           ? response.data
@@ -563,7 +609,6 @@ export class RealLiveService implements LiveService {
         return;
       }
 
-      // Cancel any pending utterances
       window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(text);
@@ -571,7 +616,6 @@ export class RealLiveService implements LiveService {
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
 
-      // Try to pick a natural-sounding voice
       const voices = window.speechSynthesis.getVoices();
       const preferred = voices.find(
         (v) =>
@@ -598,14 +642,12 @@ export class RealLiveService implements LiveService {
   }
 
   private stopTTS(): void {
-    // Stop ElevenLabs audio
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio.currentTime = 0;
       this.currentAudio = null;
     }
 
-    // Stop browser speech synthesis
     if (this.currentUtterance) {
       window.speechSynthesis.cancel();
       this.currentUtterance = null;
@@ -613,19 +655,16 @@ export class RealLiveService implements LiveService {
 
     this.isSpeaking = false;
     this.config?.onSpeakingChange(false);
+    // Start cooldown even on barge-in to catch echo tail
+    this.ttsCooldownUntil = Date.now() + RealLiveService.TTS_COOLDOWN_MS;
   }
 }
 
 // ─── Helpers ───
 
-/**
- * Convert Float32 PCM [-1.0, 1.0] to Int16 PCM [-32768, 32767].
- * Deepgram expects linear16 encoding for WebSocket streaming.
- */
 function float32ToInt16(float32: Float32Array): Int16Array {
   const int16 = new Int16Array(float32.length);
   for (let i = 0; i < float32.length; i++) {
-    // Clamp to [-1, 1] then scale
     const s = Math.max(-1, Math.min(1, float32[i]));
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
