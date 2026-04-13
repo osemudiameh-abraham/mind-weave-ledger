@@ -96,7 +96,7 @@ serve(async (req) => {
     // ─── Build Deepgram WebSocket URL (without key — auth via subprotocol) ───
     const dgParams = new URLSearchParams({
       model: "nova-2",
-      detect_language: "true",
+      language: "en",
       smart_format: "true",
       interim_results: "true",
       utterance_end_ms: "1000",
