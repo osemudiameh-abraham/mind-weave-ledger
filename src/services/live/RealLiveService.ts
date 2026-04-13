@@ -60,16 +60,10 @@ interface DeepgramError {
   description: string;
 }
 
-interface ProxyControl {
-  type: "ready" | "error";
-  message?: string;
-}
-
 type DeepgramMessage =
   | DeepgramResult
   | DeepgramUtteranceEnd
-  | DeepgramError
-  | ProxyControl;
+  | DeepgramError;
 
 // ─── Service implementation ───
 
@@ -217,48 +211,76 @@ export class RealLiveService implements LiveService {
   // ─── PRIVATE: STT WebSocket Connection ───
 
   private async openSTTConnection(): Promise<void> {
-    // Get Supabase session for auth
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    // Step 1: Get Deepgram WebSocket URL from the token endpoint.
+    // The Edge Function validates auth and returns a URL with the API key
+    // embedded. The API key never appears in client-side code.
+    const tokenResponse = await supabase.functions.invoke("voice-stt", {
+      body: {},
+    });
 
-    if (!session?.access_token) {
-      throw new Error("Not authenticated — please sign in and try again.");
+    if (tokenResponse.error || !tokenResponse.data?.url) {
+      const msg = tokenResponse.error?.message || "Failed to get voice token";
+      console.error("[VOICE] Token endpoint failed:", msg);
+      throw new Error(msg);
     }
 
-    // Build WebSocket URL to voice-stt proxy Edge Function.
-    // Browser WebSocket cannot set custom headers, so we pass auth via query params.
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const wsUrl = supabaseUrl
-      .replace("https://", "wss://")
-      .replace("http://", "ws://");
+    const deepgramUrl: string = tokenResponse.data.url;
+    console.log("[VOICE] Got Deepgram URL from token endpoint");
 
-    const sttUrl =
-      `${wsUrl}/functions/v1/voice-stt` +
-      `?token=${encodeURIComponent(session.access_token)}` +
-      `&apikey=${encodeURIComponent(anonKey)}`;
-
-    // Open WebSocket
-    this.sttSocket = new WebSocket(sttUrl);
+    // Step 2: Connect directly to Deepgram from the browser.
+    // This avoids the Deno Deploy outgoing WebSocket limitation.
+    this.sttSocket = new WebSocket(deepgramUrl);
     this.sttSocket.binaryType = "arraybuffer";
 
-    this.sttSocket.onopen = () => {
-      console.log("[VOICE] WebSocket connected to voice-stt proxy");
-      this.reconnectAttempts = 0;
-    };
+    // Wait for connection to open or fail
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(
+          new Error(
+            "Voice connection timed out. Check your internet and try again."
+          )
+        );
+      }, 15000);
 
+      this.sttSocket!.onopen = () => {
+        clearTimeout(timeout);
+        console.log("[VOICE] Connected directly to Deepgram Nova-2");
+        this.sttReady = true;
+        this.reconnectAttempts = 0;
+        resolve();
+      };
+
+      this.sttSocket!.onerror = () => {
+        clearTimeout(timeout);
+        console.error("[VOICE] Deepgram WebSocket error");
+        reject(new Error("Voice connection failed."));
+      };
+
+      this.sttSocket!.onclose = (event: CloseEvent) => {
+        clearTimeout(timeout);
+        // If we haven't resolved yet, this is a connection failure
+        if (!this.sttReady) {
+          reject(
+            new Error(
+              `Voice connection closed: code=${event.code} ${event.reason}`
+            )
+          );
+        }
+      };
+    });
+
+    // Now that connection is open, set up persistent event handlers
     this.sttSocket.onmessage = (event: MessageEvent) => {
       this.handleSTTMessage(event.data);
     };
 
     this.sttSocket.onerror = () => {
-      console.error("[VOICE] STT WebSocket error");
+      console.error("[VOICE] Deepgram WebSocket error");
     };
 
     this.sttSocket.onclose = (event: CloseEvent) => {
       console.log(
-        `[VOICE] STT WebSocket closed: code=${event.code} reason=${event.reason}`
+        `[VOICE] Deepgram closed: code=${event.code} reason=${event.reason}`
       );
       this.sttReady = false;
 
@@ -267,47 +289,14 @@ export class RealLiveService implements LiveService {
         this.attemptReconnect();
       }
     };
-
-    // Wait for the "ready" signal from the proxy (Deepgram connected)
-    await this.waitForReady(15000);
-  }
-
-  private waitForReady(timeoutMs: number): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(
-          new Error(
-            "Voice connection timed out. Check your internet and try again."
-          )
-        );
-      }, timeoutMs);
-
-      const interval = setInterval(() => {
-        if (this.sttReady) {
-          clearTimeout(timeout);
-          clearInterval(interval);
-          resolve();
-        }
-        // Check for connection failure
-        if (
-          this.sttSocket &&
-          (this.sttSocket.readyState === WebSocket.CLOSED ||
-            this.sttSocket.readyState === WebSocket.CLOSING)
-        ) {
-          clearTimeout(timeout);
-          clearInterval(interval);
-          reject(new Error("Voice connection failed."));
-        }
-      }, 50);
-    });
   }
 
   private closeSTTConnection(): void {
     if (this.sttSocket) {
-      // Send graceful close to proxy → proxy sends CloseStream to Deepgram
+      // Send CloseStream to Deepgram to finalize any pending transcription
       if (this.sttSocket.readyState === WebSocket.OPEN) {
         try {
-          this.sttSocket.send(JSON.stringify({ type: "close" }));
+          this.sttSocket.send(JSON.stringify({ type: "CloseStream" }));
         } catch {
           // Ignore — closing anyway
         }
@@ -367,21 +356,6 @@ export class RealLiveService implements LiveService {
       msg = JSON.parse(data);
     } catch {
       console.warn("[VOICE] Failed to parse STT message");
-      return;
-    }
-
-    // Proxy control messages
-    if (msg.type === "ready") {
-      console.log("[VOICE] Deepgram ready — STT active");
-      this.sttReady = true;
-      return;
-    }
-
-    if (msg.type === "error") {
-      console.error("[VOICE] STT error:", (msg as ProxyControl).message);
-      this.config?.onError(
-        (msg as ProxyControl).message || "Speech recognition error"
-      );
       return;
     }
 
