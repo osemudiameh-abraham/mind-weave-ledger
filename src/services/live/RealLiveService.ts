@@ -1,14 +1,22 @@
 /**
- * Real Live Service — Deepgram Nova-2 STT + Chat Edge Function + TTS
+ * Real Live Service — Deepgram Nova-2 STT + Streaming Chat + Sentence-Level TTS
  *
  * Architecture v5.5, Part IV:
  *   - STT: Deepgram Nova-2 via token endpoint + direct browser WebSocket (Section 4.6)
- *   - LLM: Same chat Edge Function as typed messages (Section 4.8)
- *   - TTS: OpenAI TTS (tts-1-hd, nova voice) via voice-tts Edge Function (Section 4.7)
+ *   - LLM: Streaming chat Edge Function — tokens streamed via SSE (Section 4.7, 4.8)
+ *   - TTS: OpenAI TTS (tts-1-hd, nova voice) — sentence-level streaming (Section 4.7)
  *
  * Voice state machine (Section 4.2):
  *   idle → listening → thinking → speaking → listening (loop)
- *   Barge-in: user speaks during speaking → stop TTS, return to listening
+ *   Barge-in: user speaks during speaking → stop TTS, flush queue, return to listening
+ *
+ * Key improvements over batch mode:
+ *   - LLM response streamed token-by-token
+ *   - Each sentence sent to TTS immediately (not waiting for full response)
+ *   - AudioQueue plays sentences sequentially without gaps
+ *   - User hears first word within ~2 seconds, not 4-8 seconds
+ *   - Barge-in flushes queue and cancels in-flight requests
+ *   - TTS cooldown reduced from 3000ms to 500ms (Section 4.6)
  */
 
 import type {
@@ -56,6 +64,164 @@ interface DeepgramError {
 
 type DeepgramMessage = DeepgramResult | DeepgramUtteranceEnd | DeepgramError;
 
+// ─── AudioQueue: sequential sentence-level TTS playback (Section 4.7) ───
+
+class AudioQueue {
+  private queue: string[] = [];
+  private isPlaying = false;
+  private currentAudio: HTMLAudioElement | null = null;
+  private abortControllers: AbortController[] = [];
+  private onSpeakingChange: (speaking: boolean) => void;
+  private onFinished: () => void;
+
+  constructor(
+    onSpeakingChange: (speaking: boolean) => void,
+    onFinished: () => void
+  ) {
+    this.onSpeakingChange = onSpeakingChange;
+    this.onFinished = onFinished;
+  }
+
+  enqueue(sentence: string): void {
+    this.queue.push(sentence);
+    if (!this.isPlaying) {
+      this.isPlaying = true;
+      this.onSpeakingChange(true);
+      this.playNext();
+    }
+  }
+
+  flush(): void {
+    this.queue = [];
+    for (const c of this.abortControllers) {
+      try { c.abort(); } catch { /* ignore */ }
+    }
+    this.abortControllers = [];
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.currentTime = 0;
+      this.currentAudio = null;
+    }
+    this.isPlaying = false;
+    this.onSpeakingChange(false);
+  }
+
+  get playing(): boolean {
+    return this.isPlaying;
+  }
+
+  private async playNext(): Promise<void> {
+    if (this.queue.length === 0) {
+      this.isPlaying = false;
+      this.onSpeakingChange(false);
+      this.onFinished();
+      return;
+    }
+
+    const sentence = this.queue.shift()!;
+    const controller = new AbortController();
+    this.abortControllers.push(controller);
+
+    try {
+      const audioBlob = await this.fetchTTS(sentence, controller.signal);
+      // Remove this controller from the list
+      this.abortControllers = this.abortControllers.filter((c) => c !== controller);
+
+      if (audioBlob) {
+        await this.playAudio(audioBlob);
+      }
+    } catch (err: unknown) {
+      this.abortControllers = this.abortControllers.filter((c) => c !== controller);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Barge-in — expected, not an error
+        return;
+      }
+      console.error("[AudioQueue] TTS error, skipping sentence:", err);
+    }
+
+    // Play next sentence (or finish)
+    this.playNext();
+  }
+
+  private async fetchTTS(
+    text: string,
+    signal: AbortSignal
+  ): Promise<Blob | null> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/voice-tts`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+      signal,
+    });
+
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("audio")) return null;
+    return response.blob();
+  }
+
+  private playAudio(blob: Blob): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      this.currentAudio = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        this.currentAudio = null;
+        resolve();
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        this.currentAudio = null;
+        resolve();
+      };
+
+      audio.play().catch(() => {
+        URL.revokeObjectURL(url);
+        this.currentAudio = null;
+        resolve();
+      });
+    });
+  }
+}
+
+// ─── Sentence boundary detection ───
+
+/**
+ * Find the last sentence boundary in text.
+ * Returns the index of the boundary character, or -1 if none found.
+ * A sentence boundary is . ? ! followed by a space or end of string.
+ */
+function findSentenceBoundary(text: string): number {
+  let lastBoundary = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "." || ch === "?" || ch === "!") {
+      // Check it's not part of an abbreviation (e.g. "Mr." "Dr." "U.S.")
+      // Simple heuristic: boundary if followed by space, newline, or end of string
+      const next = text[i + 1];
+      if (next === undefined || next === " " || next === "\n") {
+        lastBoundary = i;
+      }
+    }
+  }
+  return lastBoundary;
+}
+
 // ─── Service implementation ───
 
 export class RealLiveService implements LiveService {
@@ -72,30 +238,37 @@ export class RealLiveService implements LiveService {
   private maxReconnectAttempts = 3;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Keepalive: Deepgram closes the connection after ~12s of no audio.
-  // We send {"type":"KeepAlive"} every 8s to prevent this.
+  // Keepalive
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   // Transcript accumulation
   private finalTranscriptParts: string[] = [];
 
-  // TTS state
-  private currentAudio: HTMLAudioElement | null = null;
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
-  private isSpeaking = false;
-  // After TTS ends, mute audio for a cooldown period to prevent echo pickup.
-  // Browser echoCancellation isn't perfect — residual TTS audio from speakers
-  // gets transcribed as user input without this guard.
+  // TTS / AudioQueue
+  private audioQueue: AudioQueue;
+  // After TTS ends, mute for a short cooldown to catch residual echo.
+  // Architecture Section 4.6: 500ms, NOT seconds.
   private ttsCooldownUntil = 0;
-  private static TTS_COOLDOWN_MS = 3000;
-  // Store the last TTS text for echo detection. If an incoming transcript
-  // contains significant word overlap with what Seven just said, it's echo
-  // from the speakers being picked up by the mic, not actual user speech.
+  private static TTS_COOLDOWN_MS = 500;
   private lastSpokenText = "";
+
+  // Streaming LLM abort controller (for barge-in cancellation)
+  private streamAbortController: AbortController | null = null;
 
   // Media & session state
   private mediaState = { camera: false, screen: false, mic: true };
   private shouldBeConnected = false;
+
+  constructor() {
+    this.audioQueue = new AudioQueue(
+      (speaking) => this.config?.onSpeakingChange(speaking),
+      () => {
+        // AudioQueue finished playing all sentences
+        this.ttsCooldownUntil = Date.now() + RealLiveService.TTS_COOLDOWN_MS;
+        this.finalTranscriptParts = [];
+      }
+    );
+  }
 
   // ─── PUBLIC API ───
 
@@ -119,7 +292,8 @@ export class RealLiveService implements LiveService {
         text: greeting,
         timestamp: Date.now(),
       });
-      this.speak(greeting);
+      this.audioQueue.enqueue(greeting);
+      this.lastSpokenText = greeting;
     } catch (err) {
       console.error("[VOICE] Connection failed:", err);
       this.status = "error";
@@ -132,7 +306,8 @@ export class RealLiveService implements LiveService {
 
   disconnect(): void {
     this.shouldBeConnected = false;
-    this.stopTTS();
+    this.audioQueue.flush();
+    this.cancelStream();
     this.closeSTTConnection();
 
     if (this.reconnectTimer) {
@@ -150,8 +325,9 @@ export class RealLiveService implements LiveService {
   sendText(text: string): void {
     if (!this.config) return;
 
-    if (this.isSpeaking) {
-      this.stopTTS();
+    if (this.audioQueue.playing) {
+      this.audioQueue.flush();
+      this.cancelStream();
     }
 
     this.config.onMessage({
@@ -165,10 +341,11 @@ export class RealLiveService implements LiveService {
   }
 
   sendAudio(audioData: Float32Array, _sampleRate: number): void {
-    // Don't send audio during TTS or cooldown period to prevent feedback loop.
-    if (this.isSpeaking || Date.now() < this.ttsCooldownUntil) return;
+    // Architecture Section 4.6: Keep sending audio to Deepgram during TTS.
+    // Do NOT block. Transcripts are discarded in handleTranscriptResult instead.
+    // Only block during cooldown period (500ms after TTS ends).
+    if (Date.now() < this.ttsCooldownUntil) return;
 
-    // Don't send if WebSocket not ready
     if (
       !this.sttSocket ||
       this.sttSocket.readyState !== WebSocket.OPEN ||
@@ -177,7 +354,6 @@ export class RealLiveService implements LiveService {
       return;
     }
 
-    // Convert Float32 [-1.0, 1.0] → Int16 [-32768, 32767]
     const int16 = float32ToInt16(audioData);
 
     try {
@@ -188,7 +364,7 @@ export class RealLiveService implements LiveService {
   }
 
   sendFrame(_frameBase64: string): void {
-    // Visual analysis: Priority 8 (Gemini 2.0 Flash)
+    // Visual analysis: future priority
   }
 
   setMediaState(state: {
@@ -203,10 +379,18 @@ export class RealLiveService implements LiveService {
     return this.status;
   }
 
+  // ─── PRIVATE: Cancel in-flight streaming LLM request ───
+
+  private cancelStream(): void {
+    if (this.streamAbortController) {
+      try { this.streamAbortController.abort(); } catch { /* ignore */ }
+      this.streamAbortController = null;
+    }
+  }
+
   // ─── PRIVATE: STT WebSocket Connection ───
 
   private async openSTTConnection(): Promise<void> {
-    // Guard against duplicate connection attempts
     if (this.isConnecting) {
       console.log("[VOICE] Connection already in progress, skipping");
       return;
@@ -214,7 +398,6 @@ export class RealLiveService implements LiveService {
     this.isConnecting = true;
 
     try {
-      // Step 1: Get Deepgram URL + key from token endpoint
       const tokenResponse = await supabase.functions.invoke("voice-stt", {
         body: {},
       });
@@ -237,28 +420,17 @@ export class RealLiveService implements LiveService {
       const deepgramKey: string = tokenResponse.data.key;
       console.log("[VOICE] Got Deepgram URL from token endpoint");
 
-      // Close any existing socket before opening a new one
       if (this.sttSocket) {
-        try {
-          this.sttSocket.close(1000);
-        } catch {
-          /* ignore */
-        }
+        try { this.sttSocket.close(1000); } catch { /* ignore */ }
         this.sttSocket = null;
       }
 
-      // Step 2: Connect directly to Deepgram with subprotocol auth
       this.sttSocket = new WebSocket(deepgramUrl, ["token", deepgramKey]);
       this.sttSocket.binaryType = "arraybuffer";
 
-      // Wait for connection to open or fail
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(
-            new Error(
-              "Voice connection timed out. Check your internet and try again."
-            )
-          );
+          reject(new Error("Voice connection timed out. Check your internet and try again."));
         }, 15000);
 
         this.sttSocket!.onopen = () => {
@@ -278,16 +450,12 @@ export class RealLiveService implements LiveService {
         this.sttSocket!.onclose = (event: CloseEvent) => {
           clearTimeout(timeout);
           if (!this.sttReady) {
-            reject(
-              new Error(
-                `Voice connection closed: code=${event.code} ${event.reason}`
-              )
-            );
+            reject(new Error(`Voice connection closed: code=${event.code} ${event.reason}`));
           }
         };
       });
 
-      // Set up persistent event handlers after successful connection
+      // Set up persistent event handlers
       this.sttSocket.onmessage = (event: MessageEvent) => {
         this.handleSTTMessage(event.data);
       };
@@ -297,27 +465,17 @@ export class RealLiveService implements LiveService {
       };
 
       this.sttSocket.onclose = (event: CloseEvent) => {
-        console.log(
-          `[VOICE] Deepgram closed: code=${event.code} reason=${event.reason}`
-        );
+        console.log(`[VOICE] Deepgram closed: code=${event.code} reason=${event.reason}`);
         this.sttReady = false;
         this.stopKeepalive();
 
-        // Only reconnect for unexpected disconnects, NOT for idle timeouts.
-        // Code 1011 = "Deepgram did not receive audio data" — this is normal
-        // when mic is denied or during extended TTS. Don't spam reconnects.
         if (this.shouldBeConnected && event.code !== 1011) {
           this.attemptReconnect();
         } else if (this.shouldBeConnected && event.code === 1011) {
-          console.log(
-            "[VOICE] Deepgram idle timeout — will reconnect when audio resumes"
-          );
-          // Don't reconnect immediately. The audio capture hook will trigger
-          // a reconnect when mic becomes available and audio starts flowing.
+          console.log("[VOICE] Deepgram idle timeout — will reconnect when audio resumes");
         }
       };
 
-      // Start keepalive timer
       this.startKeepalive();
     } finally {
       this.isConnecting = false;
@@ -326,17 +484,9 @@ export class RealLiveService implements LiveService {
 
   private startKeepalive(): void {
     this.stopKeepalive();
-    // Send KeepAlive every 8 seconds to prevent Deepgram's ~12s idle timeout
     this.keepaliveTimer = setInterval(() => {
-      if (
-        this.sttSocket &&
-        this.sttSocket.readyState === WebSocket.OPEN
-      ) {
-        try {
-          this.sttSocket.send(JSON.stringify({ type: "KeepAlive" }));
-        } catch {
-          // Ignore — if send fails, onclose will handle it
-        }
+      if (this.sttSocket && this.sttSocket.readyState === WebSocket.OPEN) {
+        try { this.sttSocket.send(JSON.stringify({ type: "KeepAlive" })); } catch { /* ignore */ }
       }
     }, 8000);
   }
@@ -352,17 +502,9 @@ export class RealLiveService implements LiveService {
     this.stopKeepalive();
     if (this.sttSocket) {
       if (this.sttSocket.readyState === WebSocket.OPEN) {
-        try {
-          this.sttSocket.send(JSON.stringify({ type: "CloseStream" }));
-        } catch {
-          /* ignore */
-        }
+        try { this.sttSocket.send(JSON.stringify({ type: "CloseStream" })); } catch { /* ignore */ }
       }
-      try {
-        this.sttSocket.close(1000, "Client disconnected");
-      } catch {
-        /* ignore */
-      }
+      try { this.sttSocket.close(1000, "Client disconnected"); } catch { /* ignore */ }
       this.sttSocket = null;
     }
     this.sttReady = false;
@@ -374,20 +516,13 @@ export class RealLiveService implements LiveService {
       console.error("[VOICE] Max reconnection attempts reached");
       this.status = "error";
       this.config?.onStatusChange("error");
-      this.config?.onError(
-        "Voice connection lost. Please refresh to reconnect."
-      );
+      this.config?.onError("Voice connection lost. Please refresh to reconnect.");
       return;
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempts - 1),
-      8000
-    );
-    console.log(
-      `[VOICE] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
-    );
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 8000);
+    console.log(`[VOICE] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
     this.reconnectTimer = setTimeout(async () => {
       try {
@@ -399,23 +534,6 @@ export class RealLiveService implements LiveService {
         console.error("[VOICE] Reconnection failed:", err);
       }
     }, delay);
-  }
-
-  /**
-   * Called by sendAudio when audio starts flowing after a Deepgram idle timeout.
-   * Re-establishes the connection so transcription can resume.
-   */
-  private ensureConnected(): void {
-    if (
-      this.shouldBeConnected &&
-      this.sttReady === false &&
-      !this.isConnecting &&
-      !this.reconnectTimer
-    ) {
-      console.log("[VOICE] Audio flowing — reconnecting to Deepgram");
-      this.reconnectAttempts = 0;
-      this.attemptReconnect();
-    }
   }
 
   // ─── PRIVATE: STT Message Handling ───
@@ -432,11 +550,7 @@ export class RealLiveService implements LiveService {
 
     if (msg.type === "Error") {
       const dgErr = msg as DeepgramError;
-      console.error(
-        "[VOICE] Deepgram error:",
-        dgErr.message,
-        dgErr.description
-      );
+      console.error("[VOICE] Deepgram error:", dgErr.message, dgErr.description);
       this.config?.onError("Speech recognition error. Please try again.");
       return;
     }
@@ -453,9 +567,8 @@ export class RealLiveService implements LiveService {
   }
 
   private handleTranscriptResult(result: DeepgramResult): void {
-    // Ignore ALL transcripts during TTS and cooldown to prevent feedback loop.
-    // Deepgram may return transcripts from audio received before isSpeaking was set.
-    if (this.isSpeaking || Date.now() < this.ttsCooldownUntil) return;
+    // During cooldown: discard everything (residual echo)
+    if (Date.now() < this.ttsCooldownUntil) return;
 
     const alt = result.channel?.alternatives?.[0];
     if (!alt) return;
@@ -465,6 +578,20 @@ export class RealLiveService implements LiveService {
     if (!result.is_final) return;
 
     if (transcript.trim()) {
+      // During TTS playback: check for barge-in
+      if (this.audioQueue.playing) {
+        // Run echo detection — if this is NOT echo, it's a barge-in
+        if (this.lastSpokenText && isEcho(transcript, this.lastSpokenText)) {
+          // Echo from speakers, discard
+          return;
+        }
+        // Real speech during TTS → BARGE-IN
+        console.log("[VOICE] Barge-in detected — interrupting TTS");
+        this.audioQueue.flush();
+        this.cancelStream();
+        this.finalTranscriptParts = [];
+      }
+
       this.finalTranscriptParts.push(transcript.trim());
     }
 
@@ -476,8 +603,8 @@ export class RealLiveService implements LiveService {
   private commitTranscript(): void {
     if (this.finalTranscriptParts.length === 0) return;
 
-    // Double-check: discard any transcript that accumulated during TTS transition
-    if (this.isSpeaking || Date.now() < this.ttsCooldownUntil) {
+    // Discard if still in cooldown
+    if (Date.now() < this.ttsCooldownUntil) {
       this.finalTranscriptParts = [];
       return;
     }
@@ -487,15 +614,16 @@ export class RealLiveService implements LiveService {
 
     if (!fullText) return;
 
-    // Echo detection: if the transcript matches what Seven just said,
-    // it's the mic picking up speaker output, not actual user speech.
+    // Echo detection for post-TTS transcripts
     if (this.lastSpokenText && isEcho(fullText, this.lastSpokenText)) {
       console.log("[VOICE] Echo detected — discarding transcript");
       return;
     }
 
-    if (this.isSpeaking) {
-      this.stopTTS();
+    // If TTS is still playing, flush it (barge-in)
+    if (this.audioQueue.playing) {
+      this.audioQueue.flush();
+      this.cancelStream();
     }
 
     this.config?.onMessage({
@@ -508,7 +636,8 @@ export class RealLiveService implements LiveService {
     this.processMessage(fullText);
   }
 
-  // ─── PRIVATE: Process message through LLM ───
+  // ─── PRIVATE: Process message through streaming LLM ───
+  // Architecture v5.5, Section 4.7: sentence-level streaming TTS
 
   private async processMessage(text: string): Promise<void> {
     if (!this.config) return;
@@ -516,190 +645,127 @@ export class RealLiveService implements LiveService {
     this.config.onSpeakingChange(false);
 
     try {
-      const response = await supabase.functions.invoke("chat", {
-        body: {
-          message: text,
-          section_id: this.sectionId,
-          metadata: { source: "voice" },
-        },
-      });
-
-      if (response.error) {
-        console.error("[VOICE] Chat error:", response.error);
-        this.config?.onError("Failed to get a response. Please try again.");
-        return;
-      }
-
-      const data = response.data;
-      this.sectionId = data.section_id;
-
-      const aiText: string = data.response;
-
-      if (data.context_used) {
-        console.log(
-          "[VOICE] Context loaded:",
-          JSON.stringify(data.context_used)
-        );
-      }
-
-      this.config?.onMessage({
-        id: `ai-${Date.now()}`,
-        role: "ai",
-        text: aiText,
-        timestamp: Date.now(),
-      });
-
-      this.speak(aiText);
-    } catch (err) {
-      console.error("[VOICE] Process message failed:", err);
-      this.config?.onError("Something went wrong. Please try again.");
-    }
-  }
-
-  // ─── PRIVATE: TTS ───
-
-  private async speak(text: string): Promise<void> {
-    this.isSpeaking = true;
-    this.config?.onSpeakingChange(true);
-
-    // Store what we're about to say for echo detection
-    this.lastSpokenText = text;
-
-    // Clear any pending transcript parts that accumulated during TTS setup
-    this.finalTranscriptParts = [];
-
-    const ttsSuccess = await this.speakOpenAI(text);
-    if (!ttsSuccess) {
-      await this.speakBrowser(text);
-    }
-
-    // TTS complete. Start cooldown period before accepting audio again.
-    // This prevents residual speaker echo from being transcribed.
-    this.ttsCooldownUntil = Date.now() + RealLiveService.TTS_COOLDOWN_MS;
-    this.isSpeaking = false;
-    this.config?.onSpeakingChange(false);
-
-    // Clear any transcript parts that may have leaked through during TTS
-    this.finalTranscriptParts = [];
-  }
-
-  private async speakOpenAI(text: string): Promise<boolean> {
-    try {
-      // Use fetch() directly instead of supabase.functions.invoke() because
-      // the Supabase JS client reads audio/mpeg responses as text, corrupting
-      // the binary data. Direct fetch gives us proper Blob handling.
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
-      if (!session?.access_token) return false;
+      if (!session?.access_token) {
+        this.config?.onError("Not authenticated. Please sign in again.");
+        return;
+      }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/voice-tts`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: anonKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ text }),
-        }
-      );
+      // Create abort controller for this stream (so barge-in can cancel it)
+      this.streamAbortController = new AbortController();
 
-      if (!response.ok) return false;
-
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("audio")) return false;
-
-      const audioBlob = await response.blob();
-
-      return new Promise<boolean>((resolve) => {
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        this.currentAudio = audio;
-
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          this.currentAudio = null;
-          resolve(true);
-        };
-
-        audio.onerror = () => {
-          URL.revokeObjectURL(audioUrl);
-          this.currentAudio = null;
-          resolve(false);
-        };
-
-        audio.play().catch(() => {
-          URL.revokeObjectURL(audioUrl);
-          this.currentAudio = null;
-          resolve(false);
-        });
+      const response = await fetch(`${supabaseUrl}/functions/v1/chat`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: anonKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+          section_id: this.sectionId,
+          metadata: { source: "voice" },
+          response_mode: "stream",
+        }),
+        signal: this.streamAbortController.signal,
       });
-    } catch {
-      return false;
-    }
-  }
 
-  private speakBrowser(text: string): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (!window.speechSynthesis) {
-        resolve();
+      if (!response.ok || !response.body) {
+        console.error("[VOICE] Chat stream error:", response.status);
+        this.config?.onError("Failed to get a response. Please try again.");
         return;
       }
 
-      window.speechSynthesis.cancel();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let tokenBuffer = "";
+      let fullText = "";
+      let sseBuffer = "";
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "en-GB";
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(
-        (v) =>
-          v.name.includes("Google") ||
-          v.name.includes("Samantha") ||
-          v.name.includes("Daniel")
-      );
-      if (preferred) utterance.voice = preferred;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const events = sseBuffer.split("\n\n");
+        sseBuffer = events.pop() || "";
 
-      this.currentUtterance = utterance;
+        for (const event of events) {
+          if (!event.startsWith("data: ")) continue;
+          const jsonStr = event.slice(6).trim();
+          if (!jsonStr) continue;
 
-      utterance.onend = () => {
-        this.currentUtterance = null;
-        resolve();
-      };
+          let parsed: { type: string; text?: string; section_id?: string };
+          try {
+            parsed = JSON.parse(jsonStr);
+          } catch {
+            continue;
+          }
 
-      utterance.onerror = () => {
-        this.currentUtterance = null;
-        resolve();
-      };
+          if (parsed.type === "token" && parsed.text) {
+            tokenBuffer += parsed.text;
+            fullText += parsed.text;
 
-      window.speechSynthesis.speak(utterance);
-    });
-  }
+            // Detect sentence boundaries and send to TTS
+            const boundary = findSentenceBoundary(tokenBuffer);
+            if (boundary > -1) {
+              const sentence = tokenBuffer.slice(0, boundary + 1).trim();
+              tokenBuffer = tokenBuffer.slice(boundary + 1);
 
-  private stopTTS(): void {
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio = null;
+              if (sentence) {
+                this.lastSpokenText = fullText;
+                this.audioQueue.enqueue(sentence);
+              }
+            }
+          }
+
+          if (parsed.type === "done") {
+            this.sectionId = parsed.section_id || this.sectionId;
+            // Flush any remaining text in buffer to TTS
+            if (tokenBuffer.trim()) {
+              this.lastSpokenText = fullText;
+              this.audioQueue.enqueue(tokenBuffer.trim());
+              tokenBuffer = "";
+            }
+          }
+
+          if (parsed.type === "error") {
+            this.config?.onError(parsed.text || "Something went wrong.");
+          }
+        }
+      }
+
+      this.streamAbortController = null;
+
+      // Add full text to transcript
+      if (fullText) {
+        this.lastSpokenText = fullText;
+        this.config?.onMessage({
+          id: `ai-${Date.now()}`,
+          role: "ai",
+          text: fullText,
+          timestamp: Date.now(),
+        });
+      }
+
+      // If there's still buffered text that never hit a sentence boundary, send it
+      if (tokenBuffer.trim()) {
+        this.audioQueue.enqueue(tokenBuffer.trim());
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Barge-in cancelled the stream — this is expected
+        console.log("[VOICE] Stream aborted (barge-in)");
+        return;
+      }
+      console.error("[VOICE] Process message failed:", err);
+      this.config?.onError("Something went wrong. Please try again.");
     }
-
-    if (this.currentUtterance) {
-      window.speechSynthesis.cancel();
-      this.currentUtterance = null;
-    }
-
-    this.isSpeaking = false;
-    this.config?.onSpeakingChange(false);
-    // Start cooldown even on barge-in to catch echo tail
-    this.ttsCooldownUntil = Date.now() + RealLiveService.TTS_COOLDOWN_MS;
   }
 }
 
@@ -717,8 +783,7 @@ function float32ToInt16(float32: Float32Array): Int16Array {
 /**
  * Detect if a transcript is an echo of the TTS output.
  * Compares significant words (3+ chars) between the transcript and the
- * last spoken text. If ≥40% of the transcript's words appear in the
- * spoken text, it's likely echo from speakers picked up by the mic.
+ * last spoken text. If ≥40% overlap, it's likely echo.
  */
 function isEcho(transcript: string, lastSpoken: string): boolean {
   const normalize = (s: string) =>

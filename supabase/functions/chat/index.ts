@@ -22,6 +22,213 @@ async function embed(text: string, apiKey: string): Promise<number[] | null> {
   }
 }
 
+// ─── Post-processing: runs after LLM response for both batch and stream modes ───
+async function runPostProcessing(params: {
+  supabase: ReturnType<typeof createClient>;
+  userId: string;
+  convoId: string;
+  message: string;
+  assistantContent: string;
+  queryEmbedding: number[] | null;
+  openaiKey: string;
+  facts: { subject: string; attribute: string; value_text: string }[];
+  decisions: { title: string }[];
+  patterns: { pattern_type: string }[];
+  recentMems: { text: string }[];
+  semanticMems: { text: string }[];
+}) {
+  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems } = params;
+
+  // Store assistant response
+  await supabase.from("messages").insert({
+    user_id: userId,
+    section_id: convoId,
+    role: "assistant",
+    content: assistantContent,
+  });
+
+  // ─── Extract facts from EVERY message ───
+  {
+    try {
+      const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Extract ALL factual claims, preferences, opinions, dislikes, habits, and personal information from the user message. Return a JSON array of objects with: subject, attribute, value, category (one of: identity, work, values, goals, patterns, relationships, preferences, dislikes, habits, general). Extract things like "I don't like X", "I prefer Y", "I hate Z", "I love W", "I'm allergic to", "I avoid", etc. If the message contains no extractable facts or preferences, return []. Return ONLY valid JSON, no markdown.`,
+            },
+            { role: "user", content: message },
+          ],
+          temperature: 0,
+          max_tokens: 512,
+        }),
+      });
+
+      if (!extractRes.ok) {
+        console.error("[FACT_EXTRACT] OpenAI API error:", extractRes.status, await extractRes.text());
+      } else {
+        const extractData = await extractRes.json();
+        const rawFacts = extractData.choices?.[0]?.message?.content || "[]";
+        const cleanFacts = rawFacts.replace(/```json\n?|```/g, "").trim();
+        console.log("[FACT_EXTRACT] Raw LLM output:", cleanFacts);
+
+        let extractedFacts: { subject?: string; attribute?: string; value?: string; category?: string }[];
+        try {
+          extractedFacts = JSON.parse(cleanFacts);
+        } catch (parseErr) {
+          console.error("[FACT_EXTRACT] JSON parse failed:", parseErr, "Raw:", cleanFacts);
+          extractedFacts = [];
+        }
+
+        if (Array.isArray(extractedFacts)) {
+          console.log(`[FACT_EXTRACT] Extracted ${extractedFacts.length} facts from message`);
+
+          for (const fact of extractedFacts) {
+            if (!fact.subject || !fact.attribute || !fact.value) {
+              console.warn("[FACT_EXTRACT] Skipping incomplete fact:", JSON.stringify(fact));
+              continue;
+            }
+
+            const factKey = `${fact.subject.toLowerCase().trim()}::${fact.attribute.toLowerCase().trim()}`;
+            const canonicalText = `${fact.subject} ${fact.attribute} is ${fact.value}`;
+            const category = fact.category || "general";
+
+            const { data: supersededData, error: supersededError } = await supabase
+              .from("memory_facts")
+              .update({
+                valid_until: new Date().toISOString(),
+                status: "superseded",
+              })
+              .eq("user_id", userId)
+              .eq("subject", fact.subject)
+              .eq("attribute", fact.attribute)
+              .is("valid_until", null)
+              .select("id");
+
+            if (supersededError) {
+              console.error("[FACT_STORE] Supersede update failed:", supersededError.message, supersededError.details);
+            } else if (supersededData && supersededData.length > 0) {
+              console.log(`[FACT_STORE] Superseded ${supersededData.length} existing fact(s) for ${factKey}`);
+            }
+
+            const supersededId = supersededData?.[0]?.id || null;
+
+            const { error: insertError } = await supabase.from("memory_facts").insert({
+              user_id: userId,
+              fact_key: factKey,
+              subject: fact.subject,
+              attribute: fact.attribute,
+              value_text: fact.value,
+              canonical_text: canonicalText,
+              category: category,
+              source_type: "inferred",
+              confidence: 0.8,
+              evidence_count: 1,
+              status: "active",
+              supersedes_fact_id: supersededId,
+            });
+
+            if (insertError) {
+              console.error(
+                "[FACT_STORE] INSERT failed:",
+                insertError.message,
+                insertError.details,
+                insertError.hint,
+                "Fact:", JSON.stringify({ factKey, subject: fact.subject, attribute: fact.attribute, value: fact.value })
+              );
+            } else {
+              console.log(`[FACT_STORE] Stored fact: ${factKey} = ${fact.value}`);
+            }
+          }
+        } else {
+          console.warn("[FACT_EXTRACT] Extraction result is not an array:", typeof extractedFacts);
+        }
+      }
+    } catch (extractionErr) {
+      console.error("[FACT_EXTRACT] Extraction pipeline failed:", extractionErr);
+    }
+  }
+
+  // Always store every user message as a memory with embedding
+  const { error: memError } = await supabase.from("memories_structured").insert({
+    user_id: userId,
+    text: message,
+    memory_type: "chat",
+    importance: 5,
+    source_message_id: crypto.randomUUID(),
+    embedding: queryEmbedding,
+  });
+  if (memError) {
+    console.error("[MEMORY_STORE] Failed to store memory:", memError.message, memError.details);
+  }
+
+  // ─── Decision detection ───
+  const decisionSignals = /\b(i decided|i'm going to|i will|i've decided|my decision|i choose|i commit)\b/i;
+  if (decisionSignals.test(message)) {
+    try {
+      const decExtract = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Extract the decision from this message. Return JSON: { "title": "short decision title", "context": "brief context" }. If no clear decision, return null. Return ONLY valid JSON, no markdown.`,
+            },
+            { role: "user", content: message },
+          ],
+          temperature: 0,
+          max_tokens: 256,
+        }),
+      });
+
+      const decData = await decExtract.json();
+      const raw = decData.choices?.[0]?.message?.content || "null";
+      const clean = raw.replace(/```json\n?|```/g, "").trim();
+      const decision = JSON.parse(clean);
+
+      if (decision?.title) {
+        const { error: decError } = await supabase.from("decisions").insert({
+          user_id: userId,
+          title: decision.title,
+          context_summary: decision.context || message.slice(0, 200),
+          source_message_id: crypto.randomUUID(),
+        });
+        if (decError) {
+          console.error("[DECISION_STORE] Failed:", decError.message, decError.details);
+        } else {
+          console.log(`[DECISION_STORE] Captured decision: ${decision.title}`);
+        }
+      }
+    } catch (decErr) {
+      console.error("[DECISION_EXTRACT] Pipeline failed:", decErr);
+    }
+  }
+
+  // ─── Governance trace ───
+  const { error: traceError } = await supabase.from("memory_traces").insert({
+    user_id: userId,
+    query_text: message.slice(0, 500),
+    assistant_text: assistantContent.slice(0, 2000),
+    picked_memory_ids: [],
+    strategy_history: {
+      facts_loaded: facts.length,
+      decisions_loaded: decisions.length,
+      patterns_loaded: patterns.length,
+      recent_memories: recentMems.length,
+      semantic_matches: semanticMems.length,
+      sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
+    },
+  });
+  if (traceError) {
+    console.error("[TRACE_STORE] Failed:", traceError.message);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -44,7 +251,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
-    const { message, section_id } = await req.json();
+    const { message, section_id, response_mode, metadata } = await req.json();
     if (!message) {
       return new Response(JSON.stringify({ error: "No message" }), { status: 400, headers: corsHeaders });
     }
@@ -72,6 +279,7 @@ serve(async (req) => {
       section_id: convoId,
       role: "user",
       content: message,
+      metadata: metadata || null,
     });
 
     // ─── Generate embedding for user message (non-blocking start) ───
@@ -127,7 +335,6 @@ serve(async (req) => {
     const recentMems = recentMemsRes.data || [];
     const history = historyRes.data || [];
 
-    // Log any context loading failures
     if (factsRes.error) console.error("[CONTEXT] Facts query failed:", factsRes.error.message);
     if (decisionsRes.error) console.error("[CONTEXT] Decisions query failed:", decisionsRes.error.message);
     if (patternsRes.error) console.error("[CONTEXT] Patterns query failed:", patternsRes.error.message);
@@ -152,9 +359,6 @@ serve(async (req) => {
     }
 
     // ─── Assemble system prompt (facts in SYSTEM, never in user message) ───
-    // Architecture v5.5, Section 3.5: "The quality of Seven Mynd's responses is
-    // entirely determined by the quality of this assembly."
-
     const userName = identity?.self_name || null;
 
     let systemPrompt = `You are Seven Mynd — a cognitive continuity system that never forgets. You are NOT a generic AI assistant. You are NOT starting from zero. You have an ongoing, accumulated understanding of this person built from every conversation you've had with them.
@@ -203,7 +407,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       systemPrompt += `\n\n## BEHAVIOUR PATTERNS YOU'VE DETECTED\nWarn or guide them when these patterns are relevant:\n${patternLines.join("\n")}`;
     }
 
-    // Semantically relevant memories (vector search results)
+    // Semantically relevant memories
     if (semanticMems.length > 0) {
       const semLines = semanticMems.map((m) => `- ${m.text}`);
       systemPrompt += `\n\n## RELEVANT PAST CONVERSATIONS (matched to what they're saying now)\n${semLines.join("\n")}`;
@@ -215,8 +419,12 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       systemPrompt += `\n\n## RECENT THINGS THEY'VE TOLD YOU\n${memLines.join("\n")}`;
     }
 
-    // Log assembled context for debugging
-    console.log(`[CONTEXT] User: ${userName || "unknown"} | Facts: ${facts.length} | Decisions: ${decisions.length} | Patterns: ${patterns.length} | Memories: ${recentMems.length} | Semantic: ${semanticMems.length} | History: ${history.length}`);
+    // Voice-optimised system prompt (Section 4.8)
+    if (metadata?.source === "voice") {
+      systemPrompt += `\n\nYou are in a live voice conversation. Respond conversationally — short sentences, natural rhythm. Never monologue. Keep responses under 2-3 sentences unless the user specifically asks for detail. Match the user's emotional tone — if they sound frustrated, acknowledge it. If they're excited, match their energy. If they share something difficult, respond with empathy. Use natural conversational markers like 'right', 'I see', 'that makes sense', 'got it' when appropriate. You are having a real-time spoken conversation, not writing an essay. Pause points matter — structure your response so it can be spoken naturally with sentence-level TTS streaming. Never use markdown, bullet points, numbered lists, or any formatting that only works visually. Speak like a trusted advisor who knows the user deeply, not like a search engine.`;
+    }
+
+    console.log(`[CONTEXT] User: ${userName || "unknown"} | Facts: ${facts.length} | Decisions: ${decisions.length} | Patterns: ${patterns.length} | Memories: ${recentMems.length} | Semantic: ${semanticMems.length} | History: ${history.length} | Mode: ${response_mode || "batch"}`);
 
     // Build messages array for OpenAI
     const openaiMessages: { role: string; content: string }[] = [
@@ -233,7 +441,120 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
 
     openaiMessages.push({ role: "user", content: message });
 
-    // ─── Call OpenAI ───
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STREAMING MODE — Architecture v5.5, Section 4.7
+    // Returns SSE events with tokens for sentence-level TTS streaming.
+    // Post-processing runs after streaming completes.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (response_mode === "stream") {
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          let fullText = "";
+
+          try {
+            const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${openaiKey}`,
+              },
+              body: JSON.stringify({
+                model: Deno.env.get("OPENAI_MODEL") || "gpt-4o",
+                messages: openaiMessages,
+                temperature: 0.7,
+                max_tokens: 1024,
+                stream: true,
+              }),
+            });
+
+            if (!llmResponse.ok || !llmResponse.body) {
+              const errText = await llmResponse.text();
+              console.error("[CHAT_STREAM] OpenAI error:", llmResponse.status, errText);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", text: "I had trouble processing that. Please try again." })}\n\n`));
+              controller.close();
+              return;
+            }
+
+            const reader = llmResponse.body.getReader();
+            const decoder = new TextDecoder();
+            let sseBuffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              sseBuffer += decoder.decode(value, { stream: true });
+              const lines = sseBuffer.split("\n");
+              sseBuffer = lines.pop() || "";
+
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const data = line.slice(6).trim();
+                if (data === "[DONE]") continue;
+
+                try {
+                  const parsed = JSON.parse(data);
+                  const token = parsed.choices?.[0]?.delta?.content;
+                  if (token) {
+                    fullText += token;
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "token", text: token })}\n\n`));
+                  }
+                } catch { /* skip malformed chunks */ }
+              }
+            }
+
+            // ─── Post-processing after stream completes ───
+            const assistantContent = fullText || "I couldn't process that. Please try again.";
+
+            await runPostProcessing({
+              supabase,
+              userId: user.id,
+              convoId,
+              message,
+              assistantContent,
+              queryEmbedding,
+              openaiKey,
+              facts,
+              decisions,
+              patterns,
+              recentMems,
+              semanticMems,
+            });
+
+            // Final event with metadata
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: "done",
+              section_id: convoId,
+              context_used: {
+                facts: facts.length,
+                decisions: decisions.length,
+                patterns: patterns.length,
+                memories: recentMems.length,
+                semantic_matches: semanticMems.length,
+              },
+            })}\n\n`));
+          } catch (streamErr) {
+            console.error("[CHAT_STREAM] Stream error:", streamErr);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", text: "Something went wrong. Please try again." })}\n\n`));
+          }
+
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // BATCH MODE — Unchanged. Used by text chat (Home page).
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -251,199 +572,20 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
     const llmData = await llmResponse.json();
     const assistantContent = llmData.choices?.[0]?.message?.content || "I couldn't process that. Please try again.";
 
-    // ─── Store assistant response ───
-    await supabase.from("messages").insert({
-      user_id: user.id,
-      section_id: convoId,
-      role: "assistant",
-      content: assistantContent,
+    await runPostProcessing({
+      supabase,
+      userId: user.id,
+      convoId,
+      message,
+      assistantContent,
+      queryEmbedding,
+      openaiKey,
+      facts,
+      decisions,
+      patterns,
+      recentMems,
+      semanticMems,
     });
-
-    // ─── Extract facts from EVERY message — cognitive continuity means never missing a fact ───
-    // Production memory_facts schema requires these NOT NULL columns:
-    //   fact_key, subject, attribute, value_text, canonical_text, confidence, evidence_count, status
-    {
-      try {
-        const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: `Extract ALL factual claims, preferences, opinions, dislikes, habits, and personal information from the user message. Return a JSON array of objects with: subject, attribute, value, category (one of: identity, work, values, goals, patterns, relationships, preferences, dislikes, habits, general). Extract things like "I don't like X", "I prefer Y", "I hate Z", "I love W", "I'm allergic to", "I avoid", etc. If the message contains no extractable facts or preferences, return []. Return ONLY valid JSON, no markdown.`,
-              },
-              { role: "user", content: message },
-            ],
-            temperature: 0,
-            max_tokens: 512,
-          }),
-        });
-
-        if (!extractRes.ok) {
-          console.error("[FACT_EXTRACT] OpenAI API error:", extractRes.status, await extractRes.text());
-        } else {
-          const extractData = await extractRes.json();
-          const rawFacts = extractData.choices?.[0]?.message?.content || "[]";
-          const cleanFacts = rawFacts.replace(/```json\n?|```/g, "").trim();
-          console.log("[FACT_EXTRACT] Raw LLM output:", cleanFacts);
-
-          let extractedFacts: { subject?: string; attribute?: string; value?: string; category?: string }[];
-          try {
-            extractedFacts = JSON.parse(cleanFacts);
-          } catch (parseErr) {
-            console.error("[FACT_EXTRACT] JSON parse failed:", parseErr, "Raw:", cleanFacts);
-            extractedFacts = [];
-          }
-
-          if (Array.isArray(extractedFacts)) {
-            console.log(`[FACT_EXTRACT] Extracted ${extractedFacts.length} facts from message`);
-
-            for (const fact of extractedFacts) {
-              if (!fact.subject || !fact.attribute || !fact.value) {
-                console.warn("[FACT_EXTRACT] Skipping incomplete fact:", JSON.stringify(fact));
-                continue;
-              }
-
-              // Build required NOT NULL fields
-              const factKey = `${fact.subject.toLowerCase().trim()}::${fact.attribute.toLowerCase().trim()}`;
-              const canonicalText = `${fact.subject} ${fact.attribute} is ${fact.value}`;
-              const category = fact.category || "general";
-
-              // Supersede any existing active fact with same subject+attribute
-              const { data: supersededData, error: supersededError } = await supabase
-                .from("memory_facts")
-                .update({
-                  valid_until: new Date().toISOString(),
-                  status: "superseded",
-                })
-                .eq("user_id", user.id)
-                .eq("subject", fact.subject)
-                .eq("attribute", fact.attribute)
-                .is("valid_until", null)
-                .select("id");
-
-              if (supersededError) {
-                console.error("[FACT_STORE] Supersede update failed:", supersededError.message, supersededError.details);
-              } else if (supersededData && supersededData.length > 0) {
-                console.log(`[FACT_STORE] Superseded ${supersededData.length} existing fact(s) for ${factKey}`);
-              }
-
-              const supersededId = supersededData?.[0]?.id || null;
-
-              // Insert the new canonical fact with ALL required NOT NULL columns
-              const { error: insertError } = await supabase.from("memory_facts").insert({
-                user_id: user.id,
-                fact_key: factKey,
-                subject: fact.subject,
-                attribute: fact.attribute,
-                value_text: fact.value,
-                canonical_text: canonicalText,
-                category: category,
-                source_type: "inferred",
-                confidence: 0.8,
-                evidence_count: 1,
-                status: "active",
-                supersedes_fact_id: supersededId,
-              });
-
-              if (insertError) {
-                console.error(
-                  "[FACT_STORE] INSERT failed:",
-                  insertError.message,
-                  insertError.details,
-                  insertError.hint,
-                  "Fact:", JSON.stringify({ factKey, subject: fact.subject, attribute: fact.attribute, value: fact.value })
-                );
-              } else {
-                console.log(`[FACT_STORE] Stored fact: ${factKey} = ${fact.value}`);
-              }
-            }
-          } else {
-            console.warn("[FACT_EXTRACT] Extraction result is not an array:", typeof extractedFacts);
-          }
-        }
-      } catch (extractionErr) {
-        console.error("[FACT_EXTRACT] Extraction pipeline failed:", extractionErr);
-      }
-    }
-
-    // Always store every user message as a memory with embedding
-    const { error: memError } = await supabase.from("memories_structured").insert({
-      user_id: user.id,
-      text: message,
-      memory_type: "chat",
-      importance: 5,
-      source_message_id: crypto.randomUUID(),
-      embedding: queryEmbedding,
-    });
-    if (memError) {
-      console.error("[MEMORY_STORE] Failed to store memory:", memError.message, memError.details);
-    }
-
-    // ─── Decision detection ───
-    const decisionSignals = /\b(i decided|i'm going to|i will|i've decided|my decision|i choose|i commit)\b/i;
-    if (decisionSignals.test(message)) {
-      try {
-        const decExtract = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: `Extract the decision from this message. Return JSON: { "title": "short decision title", "context": "brief context" }. If no clear decision, return null. Return ONLY valid JSON, no markdown.`,
-              },
-              { role: "user", content: message },
-            ],
-            temperature: 0,
-            max_tokens: 256,
-          }),
-        });
-
-        const decData = await decExtract.json();
-        const raw = decData.choices?.[0]?.message?.content || "null";
-        const clean = raw.replace(/```json\n?|```/g, "").trim();
-        const decision = JSON.parse(clean);
-
-        if (decision?.title) {
-          const { error: decError } = await supabase.from("decisions").insert({
-            user_id: user.id,
-            title: decision.title,
-            context_summary: decision.context || message.slice(0, 200),
-            source_message_id: crypto.randomUUID(),
-          });
-          if (decError) {
-            console.error("[DECISION_STORE] Failed:", decError.message, decError.details);
-          } else {
-            console.log(`[DECISION_STORE] Captured decision: ${decision.title}`);
-          }
-        }
-      } catch (decErr) {
-        console.error("[DECISION_EXTRACT] Pipeline failed:", decErr);
-      }
-    }
-
-    // ─── Governance trace ───
-    const { error: traceError } = await supabase.from("memory_traces").insert({
-      user_id: user.id,
-      query_text: message.slice(0, 500),
-      assistant_text: assistantContent.slice(0, 2000),
-      picked_memory_ids: [],
-      strategy_history: {
-        facts_loaded: facts.length,
-        decisions_loaded: decisions.length,
-        patterns_loaded: patterns.length,
-        recent_memories: recentMems.length,
-        semantic_matches: semanticMems.length,
-        sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
-      },
-    });
-    if (traceError) {
-      console.error("[TRACE_STORE] Failed:", traceError.message);
-    }
 
     return new Response(
       JSON.stringify({
