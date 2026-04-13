@@ -64,8 +64,8 @@ export const useAudioCapture = ({
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: false,
+          autoGainControl: false,
           sampleRate: { ideal: sampleRate },
         },
       });
