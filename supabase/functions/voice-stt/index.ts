@@ -124,7 +124,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // ─── Build Deepgram URL ───
     // Architecture v5.5, Section 4.6: Nova-2, 100+ language auto-detection,
     // sub-300ms first-word latency.
+    // Auth via 'key' query parameter (Deepgram's documented WebSocket auth method
+    // for environments that cannot set custom HTTP headers).
     const dgParams = new URLSearchParams({
+      key: deepgramKey,
       model: "nova-2",
       detect_language: "true",
       smart_format: "true",
@@ -139,10 +142,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const dgUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
 
     // ─── Connect to Deepgram ───
-    // Auth via WebSocket subprotocol: ['token', apiKey]
-    // Deepgram extracts the API key from the Sec-WebSocket-Protocol header.
     try {
-      dgSocket = new WebSocket(dgUrl, ["token", deepgramKey]);
+      dgSocket = new WebSocket(dgUrl);
     } catch (err) {
       console.error("[voice-stt] Failed to create Deepgram WebSocket:", err);
       sendToClient(clientSocket, {
