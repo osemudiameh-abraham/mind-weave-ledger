@@ -64,6 +64,23 @@ interface DeepgramError {
 
 type DeepgramMessage = DeepgramResult | DeepgramUtteranceEnd | DeepgramError;
 
+// ─── Mobile audio singleton (Architecture Section 4.5) ───
+// Mobile browsers require reusing the SAME Audio element that was
+// "unlocked" from a user gesture. Creating new Audio() each time
+// resets the gesture requirement and play() silently fails.
+const sharedAudioElement = new Audio();
+
+/** Call from a user gesture (tap handler) to unlock audio on mobile. */
+export function unlockMobileAudio(): void {
+  sharedAudioElement.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+  sharedAudioElement.volume = 0;
+  sharedAudioElement.play().then(() => {
+    sharedAudioElement.pause();
+    sharedAudioElement.volume = 1;
+    sharedAudioElement.currentTime = 0;
+  }).catch(() => {});
+}
+
 // ─── AudioQueue: sequential sentence-level TTS playback (Section 4.7) ───
 
 class AudioQueue {
@@ -174,22 +191,24 @@ class AudioQueue {
   private playAudio(blob: Blob): Promise<void> {
     return new Promise<void>((resolve) => {
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      this.currentAudio = audio;
+      // Reuse the shared Audio element — mobile browsers require this.
+      // Creating new Audio() each time resets the gesture requirement.
+      sharedAudioElement.src = url;
+      this.currentAudio = sharedAudioElement;
 
-      audio.onended = () => {
+      sharedAudioElement.onended = () => {
         URL.revokeObjectURL(url);
         this.currentAudio = null;
         resolve();
       };
 
-      audio.onerror = () => {
+      sharedAudioElement.onerror = () => {
         URL.revokeObjectURL(url);
         this.currentAudio = null;
         resolve();
       };
 
-      audio.play().catch(() => {
+      sharedAudioElement.play().catch(() => {
         URL.revokeObjectURL(url);
         this.currentAudio = null;
         resolve();

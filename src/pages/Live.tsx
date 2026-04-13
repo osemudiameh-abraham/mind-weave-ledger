@@ -11,6 +11,7 @@ import LiveHeader from "@/components/live/LiveHeader";
 import LiveControls from "@/components/live/LiveControls";
 import LiveAurora from "@/components/live/LiveAurora";
 import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
+import { unlockMobileAudio } from "@/services/live/RealLiveService";
 import { motion } from "framer-motion";
 import { useRef, useEffect } from "react";
 
@@ -32,9 +33,7 @@ const Live = () => {
   // handles direct URL navigation or refresh.
   useEffect(() => {
     const unlock = () => {
-      const silence = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-      silence.volume = 0;
-      silence.play().catch(() => {});
+      unlockMobileAudio();
     };
     document.addEventListener("touchstart", unlock, { once: true });
     document.addEventListener("click", unlock, { once: true });

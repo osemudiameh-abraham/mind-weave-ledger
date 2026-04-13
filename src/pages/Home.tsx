@@ -16,6 +16,7 @@ import TrialOfferDialog from "@/components/TrialOfferDialog";
 import { useChat } from "@/hooks/use-chat";
 import { supabase } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
+import { unlockMobileAudio } from "@/services/live/RealLiveService";
 
 const suggestions = [
   "What patterns did I show this week?",
@@ -281,11 +282,7 @@ const Home = () => {
       </div>
 
       <ChatInput onSend={handleSend} onLive={() => {
-        // Unlock mobile audio playback — must happen in a user gesture handler.
-        // Without this, TTS audio.play() silently fails on iOS/Android browsers.
-        const silence = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-        silence.volume = 0;
-        silence.play().catch(() => {});
+        unlockMobileAudio();
         navigate("/live");
       }} />
       <BottomNav />
