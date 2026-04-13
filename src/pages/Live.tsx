@@ -43,12 +43,12 @@ const Live = () => {
     onFrame: session.sendFrame,
   });
 
-  // Audio capture: disabled when using browser SpeechRecognition (RealLiveService)
-  // SpeechRecognition manages its own mic access internally.
-  // Volume visualization driven by session.speaking state in LiveAurora.
-  // Re-enable when upgrading to Deepgram WebSocket STT (sends raw audio).
+  // Audio capture: feeds raw PCM audio to RealLiveService for Deepgram STT.
+  // Active when mic is on AND the voice-stt WebSocket is connected.
+  // The service converts Float32 → Int16 and sends to the Deepgram proxy.
+  // Volume levels drive the LiveAurora waveform visualization.
   useAudioCapture({
-    active: false,
+    active: session.micOn && session.sessionStatus === "connected",
     onAudioData: session.sendAudio,
     onVolumeLevel: session.setVolumeLevel,
   });
