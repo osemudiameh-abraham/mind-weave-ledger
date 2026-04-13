@@ -294,10 +294,39 @@ export class RealLiveService implements LiveService {
     this.isSpeaking = true;
     this.config?.onSpeakingChange(true);
 
+    // CRITICAL: Pause SpeechRecognition during TTS to prevent feedback loop
+    // Architecture v5.5 Section 4.6: "Barge-in handled by AudioContext.suspend()"
+    // Browser SpeechRecognition picks up TTS audio through speakers → transcribes Seven's
+    // own words → sends them as user input → infinite loop. Stop recognition while speaking.
+    this.pauseRecognition();
+
     // Try ElevenLabs first, fall back to browser speechSynthesis
     const elevenlabsSuccess = await this.speakElevenLabs(text);
     if (!elevenlabsSuccess) {
       await this.speakBrowser(text);
+    }
+
+    // Resume recognition after TTS completes (unless disconnected)
+    if (this.status === "connected" && this.mediaState.mic) {
+      this.resumeRecognition();
+    }
+  }
+
+  private pauseRecognition(): void {
+    this.shouldRestart = false;
+    try {
+      this.recognition?.stop();
+    } catch {
+      // Already stopped
+    }
+  }
+
+  private resumeRecognition(): void {
+    this.shouldRestart = true;
+    try {
+      this.recognition?.start();
+    } catch {
+      // Already started
     }
   }
 
@@ -406,5 +435,10 @@ export class RealLiveService implements LiveService {
 
     this.isSpeaking = false;
     this.config?.onSpeakingChange(false);
+
+    // Resume recognition after barge-in
+    if (this.status === "connected" && this.mediaState.mic) {
+      this.resumeRecognition();
+    }
   }
 }
