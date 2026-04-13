@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { ArrowDown } from "lucide-react";
 import TypewriterBubble from "@/components/TypewriterBubble";
 import useTypewriter from "@/hooks/use-typewriter";
 import TopNav from "@/components/TopNav";
@@ -48,66 +47,18 @@ const Home = () => {
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
   const { messages, loading: chatLoading, sendMessage, loadSection, newSection } = useChat();
 
-  // ─── Auto-scroll state ───
-  const scrollEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const [userScrolledUp, setUserScrolledUp] = useState(false);
-
-  // Detect manual scroll-up: if user scrolls more than 100px from bottom, disable auto-scroll
+  // Auto-scroll to latest message
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-      if (scrollBottom > 100) {
-        setUserScrolledUp(true);
-      } else {
-        setUserScrolledUp(false);
-      }
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  // Scroll to bottom helper
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    scrollEndRef.current?.scrollIntoView({ behavior, block: "end" });
-  }, []);
-
-  // Auto-scroll when new messages arrive or loading state changes
-  useEffect(() => {
-    if (!userScrolledUp) {
-      scrollToBottom("smooth");
-    }
-  }, [messages.length, chatLoading, userScrolledUp, scrollToBottom]);
-
-  // ResizeObserver: auto-scroll during typewriter animation (content height grows char by char)
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container || userScrolledUp) return;
-
-    const observer = new ResizeObserver(() => {
-      if (!userScrolledUp) {
-        scrollToBottom("smooth");
-      }
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [userScrolledUp, scrollToBottom]);
-
-  // Force scroll to bottom when user sends a message (reset userScrolledUp)
-  const handleSend = (text: string) => {
-    setUserScrolledUp(false);
-    sendMessage(text);
-    // Immediate scroll after state update
-    requestAnimationFrame(() => {
-      scrollToBottom("smooth");
-    });
-  };
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   // Load section from URL param (e.g. /home?section=uuid from Library)
   useEffect(() => {
     const sectionFromUrl = searchParams.get("section");
     if (sectionFromUrl) {
       setActiveSectionId(sectionFromUrl);
+      // Clear the param so it doesn't re-trigger on subsequent renders
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setActiveSectionId, setSearchParams]);
@@ -128,6 +79,10 @@ const Home = () => {
       newSection();
     }
   }, [activeSectionId, loadSection, newSection]);
+
+  const handleSend = (text: string) => {
+    sendMessage(text);
+  };
 
   const userName = localStorage.getItem("seven_user_name") || "there";
 
@@ -290,7 +245,7 @@ const Home = () => {
             </motion.div>
           </div>
         ) : (
-          <div ref={messagesContainerRef} className="flex flex-col gap-4 mt-6">
+          <div className="flex flex-col gap-4 mt-6">
             {messages.map((msg, i) => (
               <motion.div
                 key={i}
@@ -320,31 +275,10 @@ const Home = () => {
                 </div>
               </motion.div>
             )}
-            {/* Scroll sentinel — auto-scroll targets this element */}
-            <div ref={scrollEndRef} className="h-px" />
+            <div ref={messagesEndRef} />
           </div>
         )}
       </div>
-
-      {/* Floating scroll-to-bottom button — shown when user has scrolled up during a conversation */}
-      <AnimatePresence>
-        {userScrolledUp && messages.length > 0 && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => {
-              setUserScrolledUp(false);
-              scrollToBottom("smooth");
-            }}
-            className="fixed bottom-[120px] right-4 z-50 w-10 h-10 rounded-full bg-card border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            aria-label="Scroll to latest message"
-          >
-            <ArrowDown size={18} />
-          </motion.button>
-        )}
-      </AnimatePresence>
 
       <ChatInput onSend={handleSend} onLive={() => navigate("/live")} />
       <BottomNav />
