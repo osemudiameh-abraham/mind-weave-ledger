@@ -4,7 +4,7 @@
  * Architecture v5.5, Part IV:
  *   - STT: Deepgram Nova-2 via token endpoint + direct browser WebSocket (Section 4.6)
  *   - LLM: Same chat Edge Function as typed messages (Section 4.8)
- *   - TTS: ElevenLabs via voice-tts Edge Function, browser fallback (Section 4.7)
+ *   - TTS: OpenAI TTS (tts-1-hd, nova voice) via voice-tts Edge Function (Section 4.7)
  *
  * Voice state machine (Section 4.2):
  *   idle → listening → thinking → speaking → listening (loop)
@@ -87,7 +87,7 @@ export class RealLiveService implements LiveService {
   // Browser echoCancellation isn't perfect — residual TTS audio from speakers
   // gets transcribed as user input without this guard.
   private ttsCooldownUntil = 0;
-  private static TTS_COOLDOWN_MS = 800;
+  private static TTS_COOLDOWN_MS = 1500;
 
   // Media & session state
   private mediaState = { camera: false, screen: false, mic: true };
@@ -449,6 +449,10 @@ export class RealLiveService implements LiveService {
   }
 
   private handleTranscriptResult(result: DeepgramResult): void {
+    // Ignore ALL transcripts during TTS and cooldown to prevent feedback loop.
+    // Deepgram may return transcripts from audio received before isSpeaking was set.
+    if (this.isSpeaking || Date.now() < this.ttsCooldownUntil) return;
+
     const alt = result.channel?.alternatives?.[0];
     if (!alt) return;
 
@@ -467,6 +471,12 @@ export class RealLiveService implements LiveService {
 
   private commitTranscript(): void {
     if (this.finalTranscriptParts.length === 0) return;
+
+    // Double-check: discard any transcript that accumulated during TTS transition
+    if (this.isSpeaking || Date.now() < this.ttsCooldownUntil) {
+      this.finalTranscriptParts = [];
+      return;
+    }
 
     const fullText = this.finalTranscriptParts.join(" ").trim();
     this.finalTranscriptParts = [];
@@ -544,7 +554,7 @@ export class RealLiveService implements LiveService {
     // Clear any pending transcript parts that accumulated during TTS setup
     this.finalTranscriptParts = [];
 
-    const ttsSuccess = await this.speakElevenLabs(text);
+    const ttsSuccess = await this.speakOpenAI(text);
     if (!ttsSuccess) {
       await this.speakBrowser(text);
     }
@@ -559,7 +569,7 @@ export class RealLiveService implements LiveService {
     this.finalTranscriptParts = [];
   }
 
-  private async speakElevenLabs(text: string): Promise<boolean> {
+  private async speakOpenAI(text: string): Promise<boolean> {
     try {
       const response = await supabase.functions.invoke("voice-tts", {
         body: { text },
