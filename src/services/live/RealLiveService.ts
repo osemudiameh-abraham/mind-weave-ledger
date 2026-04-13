@@ -87,7 +87,11 @@ export class RealLiveService implements LiveService {
   // Browser echoCancellation isn't perfect — residual TTS audio from speakers
   // gets transcribed as user input without this guard.
   private ttsCooldownUntil = 0;
-  private static TTS_COOLDOWN_MS = 1500;
+  private static TTS_COOLDOWN_MS = 3000;
+  // Store the last TTS text for echo detection. If an incoming transcript
+  // contains significant word overlap with what Seven just said, it's echo
+  // from the speakers being picked up by the mic, not actual user speech.
+  private lastSpokenText = "";
 
   // Media & session state
   private mediaState = { camera: false, screen: false, mic: true };
@@ -483,6 +487,13 @@ export class RealLiveService implements LiveService {
 
     if (!fullText) return;
 
+    // Echo detection: if the transcript matches what Seven just said,
+    // it's the mic picking up speaker output, not actual user speech.
+    if (this.lastSpokenText && isEcho(fullText, this.lastSpokenText)) {
+      console.log("[VOICE] Echo detected — discarding transcript");
+      return;
+    }
+
     if (this.isSpeaking) {
       this.stopTTS();
     }
@@ -550,6 +561,9 @@ export class RealLiveService implements LiveService {
   private async speak(text: string): Promise<void> {
     this.isSpeaking = true;
     this.config?.onSpeakingChange(true);
+
+    // Store what we're about to say for echo detection
+    this.lastSpokenText = text;
 
     // Clear any pending transcript parts that accumulated during TTS setup
     this.finalTranscriptParts = [];
@@ -679,4 +693,34 @@ function float32ToInt16(float32: Float32Array): Int16Array {
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
   return int16;
+}
+
+/**
+ * Detect if a transcript is an echo of the TTS output.
+ * Compares significant words (3+ chars) between the transcript and the
+ * last spoken text. If ≥40% of the transcript's words appear in the
+ * spoken text, it's likely echo from speakers picked up by the mic.
+ */
+function isEcho(transcript: string, lastSpoken: string): boolean {
+  const normalize = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, "");
+
+  const transcriptWords = normalize(transcript)
+    .split(/\s+/)
+    .filter((w) => w.length >= 3);
+  const spokenWords = new Set(
+    normalize(lastSpoken)
+      .split(/\s+/)
+      .filter((w) => w.length >= 3)
+  );
+
+  if (transcriptWords.length === 0) return false;
+
+  let matches = 0;
+  for (const word of transcriptWords) {
+    if (spokenWords.has(word)) matches++;
+  }
+
+  const overlapRatio = matches / transcriptWords.length;
+  return overlapRatio >= 0.4;
 }
