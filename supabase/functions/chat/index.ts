@@ -344,7 +344,7 @@ serve(async (req) => {
     const embeddingPromise = embed(message, openaiKey);
 
     // ─── Fetch context layers in parallel ───
-    const [factsRes, decisionsRes, patternsRes, identityRes, recentMemsRes, historyRes] = await Promise.all([
+    const [factsRes, decisionsRes, patternsRes, identityRes, recentMemsRes, historyRes, identityModelRes] = await Promise.all([
       supabase
         .from("memory_facts")
         .select("subject, attribute, value_text, category, confidence")
@@ -362,8 +362,9 @@ serve(async (req) => {
         .limit(10),
       supabase
         .from("behaviour_patterns")
-        .select("id, pattern_type, description, evidence_count, confidence, trigger_conditions, last_seen_at")
+        .select("id, pattern_type, description, evidence_count, confidence, trigger_conditions, last_seen_at, severity, recommendation")
         .eq("user_id", user.id)
+        .eq("is_active", true)
         .order("confidence", { ascending: false })
         .limit(10),
       supabase
@@ -384,6 +385,12 @@ serve(async (req) => {
         .eq("section_id", convoId)
         .order("created_at", { ascending: true })
         .limit(20),
+      // Identity model — personality, values, communication style (built by weekly cron)
+      supabase
+        .from("identity_model")
+        .select("personality_dimensions, core_values, decision_tendencies, communication_style, strengths, blind_spots")
+        .eq("user_id", user.id)
+        .maybeSingle(),
     ]);
 
     const facts = factsRes.data || [];
@@ -392,6 +399,7 @@ serve(async (req) => {
     const identity = identityRes.data;
     const recentMems = recentMemsRes.data || [];
     const history = historyRes.data || [];
+    const identityModel = identityModelRes.data;
 
     if (factsRes.error) console.error("[CONTEXT] Facts query failed:", factsRes.error.message);
     if (decisionsRes.error) console.error("[CONTEXT] Decisions query failed:", decisionsRes.error.message);
@@ -466,6 +474,24 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       if (identity.focus_areas?.length) parts.push(`Focus areas: ${identity.focus_areas.join(", ")}`);
       if (parts.length) {
         systemPrompt += `\n\n## WHO THIS PERSON IS\n${parts.join("\n")}`;
+      }
+    }
+
+    // Identity model — deep personality understanding (built by weekly cron, Section 3.7)
+    if (identityModel) {
+      const modelParts: string[] = [];
+      const pd = identityModel.personality_dimensions as Record<string, string> | null;
+      if (pd?.summary) modelParts.push(`Personality: ${pd.summary}`);
+      const dt = identityModel.decision_tendencies as Record<string, string> | null;
+      if (dt?.summary) modelParts.push(`Decision style: ${dt.summary}`);
+      const cs = identityModel.communication_style as Record<string, string> | null;
+      if (cs?.summary) modelParts.push(`Communication: ${cs.summary}`);
+      if (cs?.preferred_tone) modelParts.push(`Preferred tone: ${cs.preferred_tone}`);
+      if (identityModel.core_values?.length) modelParts.push(`Core values: ${identityModel.core_values.join(", ")}`);
+      if (identityModel.strengths?.length) modelParts.push(`Strengths: ${identityModel.strengths.join(", ")}`);
+      if (identityModel.blind_spots?.length) modelParts.push(`Blind spots to be aware of: ${identityModel.blind_spots.join(", ")}`);
+      if (modelParts.length) {
+        systemPrompt += `\n\n## THEIR PERSONALITY & IDENTITY MODEL (built from sustained interaction)\nAdapt your tone and approach to match who they are:\n${modelParts.join("\n")}`;
       }
     }
 
