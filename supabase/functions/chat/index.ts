@@ -668,12 +668,132 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
             importance: 7,
             source_message_id: `gel_${pendingAction.id}`,
           });
-          executionResult = remErr ? `Failed: ${remErr.message}` : "Reminder set";
+          executionResult = remErr ? `Failed: ${remErr.message}` : "Reminder set successfully";
         } else if (actionType === "email") {
-          // Generate mailto link data for the LLM to present
-          executionResult = `Email draft ready for: ${intentData.recipient || "unknown"}. Subject: ${intentData.subject || "No subject"}`;
+          // Draft email using LLM with identity context, then generate mailto link
+          const recipient = intentData.recipient || "unknown";
+          const subject = intentData.subject || "";
+          const bodyHint = intentData.body_hint || "";
+
+          // Use GPT-4o-mini to draft the email body
+          let draftBody = bodyHint;
+          try {
+            const draftRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [
+                  {
+                    role: "system",
+                    content: `Draft a short, professional email body. Match the user's communication style. Keep it concise. Return ONLY the email body text, no subject line, no greeting line (it will be added). No markdown.${userName ? ` The sender's name is ${userName}.` : ""}`,
+                  },
+                  { role: "user", content: `Draft an email to ${recipient} about: ${bodyHint}. Subject: ${subject}` },
+                ],
+                temperature: 0.5,
+                max_tokens: 300,
+              }),
+            });
+            if (draftRes.ok) {
+              const draftData = await draftRes.json();
+              draftBody = draftData.choices?.[0]?.message?.content || bodyHint;
+            }
+          } catch { /* fallback to bodyHint */ }
+
+          // Generate mailto link
+          const mailtoParams = new URLSearchParams();
+          if (subject) mailtoParams.set("subject", subject);
+          if (draftBody) mailtoParams.set("body", draftBody);
+
+          // Look up recipient email from situation_entities if available
+          let recipientEmail = "";
+          const { data: entityMatch } = await supabase
+            .from("situation_entities")
+            .select("email, phone")
+            .eq("user_id", user.id)
+            .ilike("name", `%${recipient}%`)
+            .limit(1)
+            .maybeSingle();
+          if (entityMatch?.email) {
+            recipientEmail = entityMatch.email;
+          }
+
+          const mailtoLink = `mailto:${recipientEmail}?${mailtoParams.toString()}`;
+          const gmailLink = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(draftBody)}`;
+
+          executionResult = JSON.stringify({
+            type: "email",
+            recipient,
+            recipient_email: recipientEmail || "not found — user will need to enter",
+            subject,
+            body: draftBody,
+            mailto_link: mailtoLink,
+            gmail_link: gmailLink,
+          });
         } else if (actionType === "message") {
-          executionResult = `Message draft ready for: ${intentData.recipient || "unknown"}`;
+          // Generate WhatsApp or iMessage link
+          const recipient = intentData.recipient || "unknown";
+          const platform = intentData.platform || "whatsapp";
+          const bodyHint = intentData.body_hint || "";
+
+          // Draft message
+          let draftMessage = bodyHint;
+          try {
+            const draftRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [
+                  {
+                    role: "system",
+                    content: `Draft a short, casual message. Match how the user naturally communicates. Keep it brief. Return ONLY the message text.`,
+                  },
+                  { role: "user", content: `Draft a ${platform} message to ${recipient}: ${bodyHint}` },
+                ],
+                temperature: 0.5,
+                max_tokens: 150,
+              }),
+            });
+            if (draftRes.ok) {
+              const draftData = await draftRes.json();
+              draftMessage = draftData.choices?.[0]?.message?.content || bodyHint;
+            }
+          } catch { /* fallback to bodyHint */ }
+
+          // Look up phone/contact from situation_entities
+          let contactPhone = "";
+          const { data: contactMatch } = await supabase
+            .from("situation_entities")
+            .select("email, phone")
+            .eq("user_id", user.id)
+            .ilike("name", `%${recipient}%`)
+            .limit(1)
+            .maybeSingle();
+          if (contactMatch?.phone) {
+            contactPhone = contactMatch.phone;
+          }
+
+          let actionLink = "";
+          if (platform === "whatsapp" || platform === "wa") {
+            actionLink = contactPhone
+              ? `https://wa.me/${contactPhone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(draftMessage)}`
+              : `https://wa.me/?text=${encodeURIComponent(draftMessage)}`;
+          } else {
+            // iMessage / SMS
+            actionLink = contactPhone
+              ? `sms:${contactPhone}&body=${encodeURIComponent(draftMessage)}`
+              : `sms:&body=${encodeURIComponent(draftMessage)}`;
+          }
+
+          executionResult = JSON.stringify({
+            type: "message",
+            platform,
+            recipient,
+            contact_phone: contactPhone || "not found — user will need to enter",
+            body: draftMessage,
+            action_link: actionLink,
+          });
         } else {
           executionResult = `Action type '${actionType}' acknowledged`;
         }
@@ -699,7 +819,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
           },
         });
 
-        systemPrompt += `\n\n## ✅ ACTION EXECUTED\nThe user just approved a pending action. Confirm it naturally:\n- Action: ${actionType}\n- Details: ${JSON.stringify(intentData)}\n- Result: ${executionResult}\nTell the user it's done. Be brief and natural.`;
+        systemPrompt += `\n\n## ✅ ACTION EXECUTED\nThe user just approved a pending action. Confirm it naturally:\n- Action: ${actionType}\n- Details: ${JSON.stringify(intentData)}\n- Result: ${executionResult}\nFor email/message actions: tell the user the draft is ready and they can tap/click the link to send it. Read back a brief summary of what will be sent. For reminders: confirm it's set. Be brief and natural.`;
         console.log(`[GEL] Executed ${actionType}: ${executionResult}`);
 
       } else if (rejectSignals.test(message)) {
