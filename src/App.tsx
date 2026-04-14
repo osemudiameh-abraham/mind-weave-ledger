@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AlwaysListeningProvider } from "@/contexts/AlwaysListeningContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import NotificationInit from "@/components/NotificationInit";
 import Splash from "./pages/Splash";
 
 const Login = lazy(() => import("./pages/Login"));
@@ -36,6 +37,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+        <NotificationInit />
         <AlwaysListeningProvider>
         <Suspense fallback={<div className="min-h-screen bg-background" />}>
           <Routes>
