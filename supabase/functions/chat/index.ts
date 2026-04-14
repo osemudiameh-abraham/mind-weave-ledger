@@ -309,7 +309,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
-    const { message, section_id, response_mode, metadata } = await req.json();
+    const { message, section_id, response_mode, metadata, visual_context } = await req.json();
     if (!message) {
       return new Response(JSON.stringify({ error: "No message" }), { status: 400, headers: corsHeaders });
     }
@@ -596,6 +596,13 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
     // Voice-optimised system prompt (Section 4.8)
     if (metadata?.source === "voice") {
       systemPrompt += `\n\nYou are in a live voice conversation. Respond conversationally — short sentences, natural rhythm. Never monologue. Keep responses under 2-3 sentences unless the user specifically asks for detail. Match the user's emotional tone — if they sound frustrated, acknowledge it. If they're excited, match their energy. If they share something difficult, respond with empathy. Use natural conversational markers like 'right', 'I see', 'that makes sense', 'got it' when appropriate. You are having a real-time spoken conversation, not writing an essay. Pause points matter — structure your response so it can be spoken naturally with sentence-level TTS streaming. Never use markdown, bullet points, numbered lists, or any formatting that only works visually. Speak like a trusted advisor who knows the user deeply, not like a search engine.`;
+    }
+
+    // ─── Visual context from camera/screen-share (Section 4.5) ───
+    // Injected into system prompt so LLM can reference what the user is seeing.
+    // Visual context NEVER blocks the voice response — if absent, it's simply omitted.
+    if (visual_context) {
+      systemPrompt += `\n\n## 👁️ VISUAL CONTEXT (from camera/screen, captured seconds ago)\n${visual_context}\nYou can see what the user is looking at. Reference it naturally if relevant to what they're saying. Don't describe the image back to them unless they ask — just use it to inform your response.`;
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

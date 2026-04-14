@@ -276,6 +276,10 @@ export class RealLiveService implements LiveService {
   // Streaming LLM abort controller (for barge-in cancellation)
   private streamAbortController: AbortController | null = null;
 
+  // Visual context from camera/screen-share (Section 4.5)
+  private latestVisualContext: string | null = null;
+  private visionInFlight = false;
+
   // Media & session state
   private mediaState = { camera: false, screen: false, mic: true };
   private shouldBeConnected = false;
@@ -387,8 +391,50 @@ export class RealLiveService implements LiveService {
     }
   }
 
-  sendFrame(_frameBase64: string): void {
-    // Visual analysis: future priority
+  sendFrame(frameBase64: string): void {
+    // Architecture Section 4.5: send frames to vision Edge Function for analysis.
+    // Visual context is NOT sent as a separate message — it's injected into the
+    // next LLM context block so Seven can reference what the user is seeing.
+    // Never block on vision — if it's slow, voice continues without visual context.
+    if (this.visionInFlight) return; // Don't stack requests
+
+    this.visionInFlight = true;
+    this.analyseFrame(frameBase64).finally(() => {
+      this.visionInFlight = false;
+    });
+  }
+
+  private async analyseFrame(frameBase64: string): Promise<void> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/vision`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: anonKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          frame: frameBase64,
+          context: this.lastSpokenText ? `Last thing said: "${this.lastSpokenText.slice(0, 200)}"` : undefined,
+        }),
+      });
+
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.analysis) {
+        this.latestVisualContext = data.analysis;
+        console.log("[VISION] Updated visual context:", data.analysis.slice(0, 80));
+      }
+    } catch (err) {
+      // Vision failure is non-fatal — voice continues normally
+      console.error("[VISION] Frame analysis failed:", err);
+    }
   }
 
   setMediaState(state: {
@@ -711,6 +757,7 @@ export class RealLiveService implements LiveService {
           section_id: this.sectionId,
           metadata: { source: "voice" },
           response_mode: "stream",
+          visual_context: this.latestVisualContext || undefined,
         }),
         signal: this.streamAbortController.signal,
       });
