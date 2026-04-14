@@ -36,8 +36,9 @@ async function runPostProcessing(params: {
   patterns: { pattern_type: string }[];
   recentMems: { text: string }[];
   semanticMems: { text: string }[];
+  matchedPatternIds: string[];
 }) {
-  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems } = params;
+  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds } = params;
 
   // Store assistant response
   await supabase.from("messages").insert({
@@ -212,17 +213,13 @@ async function runPostProcessing(params: {
   // ─── Governance trace ───
   const { error: traceError } = await supabase.from("memory_traces").insert({
     user_id: userId,
-    query_text: message.slice(0, 500),
-    assistant_text: assistantContent.slice(0, 2000),
-    picked_memory_ids: [],
-    strategy_history: {
-      facts_loaded: facts.length,
-      decisions_loaded: decisions.length,
-      patterns_loaded: patterns.length,
-      recent_memories: recentMems.length,
-      semantic_matches: semanticMems.length,
-      sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
-    },
+    action_description: `Chat response: "${message.slice(0, 200)}"`,
+    reasoning: `Context: ${facts.length} facts, ${decisions.length} decisions, ${patterns.length} patterns, ${recentMems.length} memories, ${semanticMems.length} semantic matches. ${matchedPatternIds.length > 0 ? `Pattern interventions fired: ${matchedPatternIds.length}` : "No pattern interventions."}`,
+    memory_ids: [],
+    fact_ids: [],
+    decision_ids: [],
+    situation_ids: matchedPatternIds,
+    sources: ["canonical_facts", "active_decisions", "behaviour_patterns", "recent_memories", "semantic_search"],
   });
   if (traceError) {
     console.error("[TRACE_STORE] Failed:", traceError.message);
@@ -304,7 +301,7 @@ serve(async (req) => {
         .limit(10),
       supabase
         .from("behaviour_patterns")
-        .select("pattern_type, description, evidence_count, confidence")
+        .select("id, pattern_type, description, evidence_count, confidence, trigger_conditions, last_seen_at")
         .eq("user_id", user.id)
         .order("confidence", { ascending: false })
         .limit(10),
@@ -401,10 +398,72 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       systemPrompt += `\n\n## THEIR ACTIVE DECISIONS (you are tracking these)\n${decisionLines.join("\n")}`;
     }
 
-    // Behaviour patterns
+    // ─── Real-time pattern intervention (Architecture Section 4.9) ───
+    // Before generating a response, check active patterns for trigger matches.
+    // Matched patterns are injected as PRIORITY warnings the LLM must address.
+    const matchedPatternIds: string[] = [];
+    const messageLower = message.toLowerCase();
+
     if (patterns.length > 0) {
-      const patternLines = patterns.map((p) => `- [${p.pattern_type}] ${p.description} (seen ${p.evidence_count} times)`);
-      systemPrompt += `\n\n## BEHAVIOUR PATTERNS YOU'VE DETECTED\nWarn or guide them when these patterns are relevant:\n${patternLines.join("\n")}`;
+      const triggeredPatterns: typeof patterns = [];
+      const passivePatterns: typeof patterns = [];
+
+      for (const p of patterns) {
+        let triggered = false;
+
+        // Check trigger_conditions keywords against the current message
+        if (p.trigger_conditions && typeof p.trigger_conditions === "object") {
+          const conditions = p.trigger_conditions as { keywords?: string[]; intents?: string[] };
+          if (conditions.keywords && Array.isArray(conditions.keywords)) {
+            for (const keyword of conditions.keywords) {
+              if (messageLower.includes(keyword.toLowerCase())) {
+                triggered = true;
+                break;
+              }
+            }
+          }
+          if (!triggered && conditions.intents && Array.isArray(conditions.intents)) {
+            for (const intent of conditions.intents) {
+              if (messageLower.includes(intent.toLowerCase())) {
+                triggered = true;
+                break;
+              }
+            }
+          }
+        }
+
+        // Fallback: keyword match against pattern_type and description
+        if (!triggered) {
+          const patternWords = `${p.pattern_type} ${p.description}`.toLowerCase().split(/\s+/).filter((w: string) => w.length >= 4);
+          const matchCount = patternWords.filter((w: string) => messageLower.includes(w)).length;
+          if (matchCount >= 2) {
+            triggered = true;
+          }
+        }
+
+        if (triggered) {
+          triggeredPatterns.push(p);
+          matchedPatternIds.push(p.id);
+        } else {
+          passivePatterns.push(p);
+        }
+      }
+
+      // PRIORITY pattern warnings — LLM MUST address these
+      if (triggeredPatterns.length > 0) {
+        const warningLines = triggeredPatterns.map((p) => {
+          const lastSeen = p.last_seen_at ? new Date(p.last_seen_at).toLocaleDateString() : "unknown";
+          return `⚠️ ACTIVE WARNING — [${p.pattern_type}]: ${p.description} (observed ${p.evidence_count} times, last seen: ${lastSeen}, confidence: ${Math.round(p.confidence * 100)}%)`;
+        });
+        systemPrompt += `\n\n## ⚠️ PATTERN WARNINGS — YOU MUST ADDRESS THESE IN YOUR RESPONSE\nThe following behaviour patterns match what the user is currently saying or doing. You MUST:\n1. Acknowledge the pattern naturally (not robotically)\n2. Reference specific evidence ("You've done this X times before")\n3. Warn them clearly but warmly — you are protective, not preachy\n4. Let them override if they choose — you warn, you don't block\n${warningLines.join("\n")}`;
+        console.log(`[PATTERN_INTERVENTION] ${triggeredPatterns.length} pattern(s) triggered for user ${user.id.slice(0, 8)}: ${triggeredPatterns.map((p) => p.pattern_type).join(", ")}`);
+      }
+
+      // Passive pattern listing (non-triggered patterns, for general awareness)
+      if (passivePatterns.length > 0) {
+        const patternLines = passivePatterns.map((p) => `- [${p.pattern_type}] ${p.description} (seen ${p.evidence_count} times)`);
+        systemPrompt += `\n\n## BEHAVIOUR PATTERNS YOU'VE DETECTED\nMention these if relevant, but they are not triggered by the current message:\n${patternLines.join("\n")}`;
+      }
     }
 
     // Semantically relevant memories
@@ -520,6 +579,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
               patterns,
               recentMems,
               semanticMems,
+              matchedPatternIds,
             });
 
             // Final event with metadata
@@ -585,6 +645,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       patterns,
       recentMems,
       semanticMems,
+      matchedPatternIds,
     });
 
     return new Response(
