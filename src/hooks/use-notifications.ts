@@ -45,6 +45,25 @@ export function useNotifications() {
     }
   }, []);
 
+  // Auto-request notification permission on first user interaction.
+  // Browsers require a user gesture (click/tap) to show the permission prompt.
+  useEffect(() => {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission !== "default") return; // Already decided
+
+    const handleInteraction = async () => {
+      const result = await Notification.requestPermission();
+      setState((prev) => ({ ...prev, permission: result }));
+      if (result === "granted") {
+        subscribeToPush();
+      }
+    };
+
+    // Trigger on first click/tap after mount
+    document.addEventListener("click", handleInteraction, { once: true });
+    return () => document.removeEventListener("click", handleInteraction);
+  }, []);
+
   // Request permission
   const requestPermission = useCallback(async () => {
     if (typeof Notification === "undefined") return;
