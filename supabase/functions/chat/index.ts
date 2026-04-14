@@ -32,13 +32,14 @@ async function runPostProcessing(params: {
   queryEmbedding: number[] | null;
   openaiKey: string;
   facts: { subject: string; attribute: string; value_text: string }[];
-  decisions: { title: string }[];
+  decisions: { id: string; title: string }[];
   patterns: { pattern_type: string }[];
   recentMems: { text: string }[];
   semanticMems: { text: string }[];
   matchedPatternIds: string[];
+  metadata: { source?: string } | null;
 }) {
-  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds } = params;
+  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds, metadata } = params;
 
   // Store assistant response
   await supabase.from("messages").insert({
@@ -197,16 +198,76 @@ async function runPostProcessing(params: {
           user_id: userId,
           title: decision.title,
           context_summary: decision.context || message.slice(0, 200),
-          source_message_id: crypto.randomUUID(),
+          source_message_id: `${metadata?.source === "voice" ? "voice" : "chat"}_${crypto.randomUUID()}`,
         });
         if (decError) {
           console.error("[DECISION_STORE] Failed:", decError.message, decError.details);
         } else {
-          console.log(`[DECISION_STORE] Captured decision: ${decision.title}`);
+          console.log(`[DECISION_STORE] Captured decision: ${decision.title} (source: ${metadata?.source || "chat"})`);
         }
       }
     } catch (decErr) {
       console.error("[DECISION_EXTRACT] Pipeline failed:", decErr);
+    }
+  }
+
+  // ─── Outcome capture (Section 4.11) ───
+  // Detect when the user describes an outcome for an existing decision.
+  // Signals: "it worked", "it failed", "it was mixed", "that didn't work", "it went well", etc.
+  const outcomeSignals = /\b(it worked|it failed|it was mixed|that worked|that failed|didn't work|went well|went badly|was a mistake|turned out|outcome was|result was)\b/i;
+  if (outcomeSignals.test(message) && decisions.length > 0) {
+    try {
+      const decisionList = decisions.map((d) => `ID: ${d.id} | Title: "${d.title}"`).join("\n");
+      const outcomeExtract = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `The user is describing the outcome of a past decision. Match their message to one of these decisions and extract the outcome.\n\nDecisions:\n${decisionList}\n\nReturn JSON: { "decision_id": "uuid", "outcome": "worked" | "failed" | "mixed", "reflection": "brief summary of what the user said" }. If the message doesn't clearly relate to any of these decisions, return null. Return ONLY valid JSON, no markdown.`,
+            },
+            { role: "user", content: message },
+          ],
+          temperature: 0,
+          max_tokens: 256,
+        }),
+      });
+
+      const outcomeData = await outcomeExtract.json();
+      const rawOutcome = outcomeData.choices?.[0]?.message?.content || "null";
+      const cleanOutcome = rawOutcome.replace(/```json\n?|```/g, "").trim();
+      const outcome = JSON.parse(cleanOutcome);
+
+      if (outcome?.decision_id && outcome?.outcome) {
+        const { error: outcomeError } = await supabase.from("outcomes").insert({
+          user_id: userId,
+          decision_id: outcome.decision_id,
+          outcome_label: outcome.outcome,
+          reflection: outcome.reflection || message.slice(0, 200),
+          idempotency_key: `${outcome.decision_id}_${new Date().toISOString().slice(0, 10)}`,
+        });
+
+        if (outcomeError) {
+          // Idempotency key may conflict if outcome already logged today
+          if (!outcomeError.message.includes("duplicate")) {
+            console.error("[OUTCOME_STORE] Failed:", outcomeError.message);
+          }
+        } else {
+          // Update decision outcome_count and status
+          await supabase.from("decisions").update({
+            outcome_count: (decisions.find((d) => d.id === outcome.decision_id) as { outcome_count?: number } | undefined)?.outcome_count
+              ? ((decisions.find((d) => d.id === outcome.decision_id) as { outcome_count?: number })?.outcome_count || 0) + 1
+              : 1,
+            status: "reviewed",
+            updated_at: new Date().toISOString(),
+          }).eq("id", outcome.decision_id);
+          console.log(`[OUTCOME_STORE] Logged outcome for decision ${outcome.decision_id}: ${outcome.outcome}`);
+        }
+      }
+    } catch (outcomeErr) {
+      console.error("[OUTCOME_EXTRACT] Pipeline failed:", outcomeErr);
     }
   }
 
@@ -294,7 +355,7 @@ serve(async (req) => {
         .limit(50),
       supabase
         .from("decisions")
-        .select("title, context_summary, confidence, status, review_due_at, created_at")
+        .select("id, title, context_summary, confidence, status, review_due_at, outcome_count, created_at")
         .eq("user_id", user.id)
         .in("status", ["active", "pending_review"])
         .order("created_at", { ascending: false })
@@ -358,6 +419,31 @@ serve(async (req) => {
     // ─── Assemble system prompt (facts in SYSTEM, never in user message) ───
     const userName = identity?.self_name || null;
 
+    // ─── Decision intelligence: fetch recent outcomes and detect due reviews (Section 4.11) ───
+    let recentOutcomes: { decision_id: string; outcome_label: string; reflection: string | null; created_at: string }[] = [];
+    try {
+      const { data: outcomeData } = await supabase
+        .from("outcomes")
+        .select("decision_id, outcome_label, reflection, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      recentOutcomes = outcomeData || [];
+    } catch { /* non-fatal */ }
+
+    // Identify decisions due for review within 7 days
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const dueDecisions = decisions.filter((d) => {
+      if (!d.review_due_at) return false;
+      const dueTime = new Date(d.review_due_at).getTime();
+      return dueTime <= now + sevenDaysMs && dueTime >= now - sevenDaysMs;
+    });
+    const overdueDecisions = decisions.filter((d) => {
+      if (!d.review_due_at) return false;
+      return new Date(d.review_due_at).getTime() < now - sevenDaysMs;
+    });
+
     let systemPrompt = `You are Seven Mynd — a cognitive continuity system that never forgets. You are NOT a generic AI assistant. You are NOT starting from zero. You have an ongoing, accumulated understanding of this person built from every conversation you've had with them.
 
 CRITICAL RULES FOR EVERY RESPONSE:
@@ -389,13 +475,42 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       systemPrompt += `\n\n## WHAT YOU KNOW ABOUT THEM (canonical facts — these are true right now)\n${factLines.join("\n")}`;
     }
 
-    // Active decisions
+    // Active decisions with outcome history
     if (decisions.length > 0) {
+      // Build outcome map for quick lookup
+      const outcomeMap = new Map<string, { label: string; reflection: string | null }[]>();
+      for (const o of recentOutcomes) {
+        if (!outcomeMap.has(o.decision_id)) outcomeMap.set(o.decision_id, []);
+        outcomeMap.get(o.decision_id)!.push({ label: o.outcome_label, reflection: o.reflection });
+      }
+
       const decisionLines = decisions.map((d) => {
         const due = d.review_due_at ? new Date(d.review_due_at).toLocaleDateString() : "not set";
-        return `- "${d.title}" (${d.status}, review due: ${due})${d.context_summary ? ` — ${d.context_summary}` : ""}`;
+        const made = new Date(d.created_at).toLocaleDateString();
+        const outcomes = outcomeMap.get(d.id);
+        let line = `- "${d.title}" (made: ${made}, status: ${d.status}, review due: ${due})`;
+        if (d.context_summary) line += ` — ${d.context_summary}`;
+        if (outcomes && outcomes.length > 0) {
+          const outcomeStr = outcomes.map((o) => `${o.label}${o.reflection ? `: ${o.reflection}` : ""}`).join("; ");
+          line += ` [Outcomes: ${outcomeStr}]`;
+        }
+        return line;
       });
       systemPrompt += `\n\n## THEIR ACTIVE DECISIONS (you are tracking these)\n${decisionLines.join("\n")}`;
+    }
+
+    // ─── Priority: decisions due for review (Section 4.11) ───
+    if (dueDecisions.length > 0) {
+      const dueLines = dueDecisions.map((d) => {
+        const due = new Date(d.review_due_at!).toLocaleDateString();
+        return `📋 "${d.title}" — review due ${due}. Ask: "How did this work out — worked, failed, or mixed?"`;
+      });
+      systemPrompt += `\n\n## 📋 DECISIONS DUE FOR REVIEW — PROMPT THE USER\nThese decisions are due for review. If the conversation topic is related, ask the user how it went. If not related, mention it naturally at the end of your response:\n${dueLines.join("\n")}`;
+    }
+
+    if (overdueDecisions.length > 0) {
+      const overdueLines = overdueDecisions.map((d) => `- "${d.title}" (was due ${new Date(d.review_due_at!).toLocaleDateString()})`);
+      systemPrompt += `\n\n## OVERDUE REVIEWS\nThese decisions are past their review date. Gently remind the user if appropriate:\n${overdueLines.join("\n")}`;
     }
 
     // ─── Real-time pattern intervention (Architecture Section 4.9) ───
@@ -481,6 +596,177 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
     // Voice-optimised system prompt (Section 4.8)
     if (metadata?.source === "voice") {
       systemPrompt += `\n\nYou are in a live voice conversation. Respond conversationally — short sentences, natural rhythm. Never monologue. Keep responses under 2-3 sentences unless the user specifically asks for detail. Match the user's emotional tone — if they sound frustrated, acknowledge it. If they're excited, match their energy. If they share something difficult, respond with empathy. Use natural conversational markers like 'right', 'I see', 'that makes sense', 'got it' when appropriate. You are having a real-time spoken conversation, not writing an essay. Pause points matter — structure your response so it can be spoken naturally with sentence-level TTS streaming. Never use markdown, bullet points, numbered lists, or any formatting that only works visually. Speak like a trusted advisor who knows the user deeply, not like a search engine.`;
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // GEL — Governed Execution Layer (Architecture Part XI, Section 4.10)
+    // Intent detection, pending action management, approval, execution.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    // Step 1: Check for pending actions awaiting approval
+    const { data: pendingActions } = await supabase
+      .from("pending_actions")
+      .select("id, action_type, intent_data, created_at")
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const pendingAction = pendingActions?.[0] || null;
+
+    // Step 2: If there's a pending action, check if user is approving/rejecting
+    if (pendingAction) {
+      const approvalSignals = /\b(yes|send it|approve|go ahead|do it|confirmed|sure|okay|ok|yep|yeah)\b/i;
+      const rejectSignals = /\b(no|cancel|don't|stop|wait|nevermind|never mind|hold on|scratch that)\b/i;
+      const editSignals = /\b(change|edit|modify|make it|rephrase|rewrite|update the)\b/i;
+
+      if (approvalSignals.test(message) && !rejectSignals.test(message)) {
+        // ─── Execute the approved action ───
+        const actionType = pendingAction.action_type;
+        const intentData = pendingAction.intent_data || {};
+        let executionResult = "";
+
+        if (actionType === "reminder") {
+          // Store reminder as a memory
+          const { error: remErr } = await supabase.from("memories_structured").insert({
+            user_id: user.id,
+            text: intentData.description || intentData.title || "Reminder",
+            memory_type: "reminder",
+            importance: 7,
+            source_message_id: `gel_${pendingAction.id}`,
+          });
+          executionResult = remErr ? `Failed: ${remErr.message}` : "Reminder set";
+        } else if (actionType === "email") {
+          // Generate mailto link data for the LLM to present
+          executionResult = `Email draft ready for: ${intentData.recipient || "unknown"}. Subject: ${intentData.subject || "No subject"}`;
+        } else if (actionType === "message") {
+          executionResult = `Message draft ready for: ${intentData.recipient || "unknown"}`;
+        } else {
+          executionResult = `Action type '${actionType}' acknowledged`;
+        }
+
+        // Update pending_action status
+        await supabase.from("pending_actions").update({
+          status: "executed",
+          result: { outcome: executionResult },
+          executed_at: new Date().toISOString(),
+        }).eq("id", pendingAction.id);
+
+        // Audit log
+        await supabase.from("audit_log").insert({
+          user_id: user.id,
+          action: `gel_execute_${actionType}`,
+          table_name: "pending_actions",
+          row_id: pendingAction.id,
+          details: {
+            action_type: actionType,
+            intent_data: intentData,
+            result: executionResult,
+            approval_method: metadata?.source === "voice" ? "voice" : "text",
+          },
+        });
+
+        systemPrompt += `\n\n## ✅ ACTION EXECUTED\nThe user just approved a pending action. Confirm it naturally:\n- Action: ${actionType}\n- Details: ${JSON.stringify(intentData)}\n- Result: ${executionResult}\nTell the user it's done. Be brief and natural.`;
+        console.log(`[GEL] Executed ${actionType}: ${executionResult}`);
+
+      } else if (rejectSignals.test(message)) {
+        // ─── Reject the pending action ───
+        await supabase.from("pending_actions").update({
+          status: "rejected",
+          result: { reason: "User rejected" },
+        }).eq("id", pendingAction.id);
+
+        await supabase.from("audit_log").insert({
+          user_id: user.id,
+          action: `gel_reject_${pendingAction.action_type}`,
+          table_name: "pending_actions",
+          row_id: pendingAction.id,
+          details: { action_type: pendingAction.action_type, approval_method: metadata?.source === "voice" ? "voice" : "text" },
+        });
+
+        systemPrompt += `\n\n## ACTION CANCELLED\nThe user cancelled a pending ${pendingAction.action_type} action. Acknowledge briefly.`;
+        console.log(`[GEL] User rejected ${pendingAction.action_type}`);
+
+      } else if (editSignals.test(message)) {
+        // User wants to edit — keep the action pending, inject edit context
+        systemPrompt += `\n\n## ACTION EDIT REQUESTED\nThe user wants to modify a pending ${pendingAction.action_type} action:\n- Current details: ${JSON.stringify(pendingAction.intent_data)}\nHelp them edit it, then re-confirm: "Here's the updated version. Should I go ahead?"`;
+
+      } else {
+        // Pending action exists but user said something else — remind them
+        systemPrompt += `\n\n## PENDING ACTION (awaiting confirmation)\nThere is a pending ${pendingAction.action_type} action: ${JSON.stringify(pendingAction.intent_data)}. If the user's current message is unrelated, continue the conversation normally. If it seems related, ask: "By the way, should I still go ahead with that ${pendingAction.action_type}?"`;
+      }
+    }
+
+    // Step 3: Detect new actionable intents in the current message
+    const intentSignals = {
+      reminder: /\b(remind me|set a reminder|don't let me forget|remember to tell me)\b/i,
+      email: /\b(send .* email|email .* to|write .* email|draft .* email|send .* a message via email)\b/i,
+      message: /\b(send .* message|text .* to|message .* on|whatsapp|tell .* that)\b/i,
+    };
+
+    let detectedIntent: string | null = null;
+    for (const [intentType, regex] of Object.entries(intentSignals)) {
+      if (regex.test(message)) {
+        detectedIntent = intentType;
+        break;
+      }
+    }
+
+    if (detectedIntent && !pendingAction) {
+      // Use LLM to extract structured intent data
+      try {
+        const intentExtract = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: `Extract the actionable intent from this message. The intent type is: ${detectedIntent}. Return JSON with these fields based on type:\n- reminder: { "title": "short title", "description": "what to remember", "when": "time description if mentioned" }\n- email: { "recipient": "who to email", "subject": "subject line", "body_hint": "what the email should say" }\n- message: { "recipient": "who to message", "platform": "whatsapp/imessage/sms", "body_hint": "what to say" }\nReturn ONLY valid JSON, no markdown.`,
+              },
+              { role: "user", content: message },
+            ],
+            temperature: 0,
+            max_tokens: 256,
+          }),
+        });
+
+        const intentRaw = await intentExtract.json();
+        const intentText = intentRaw.choices?.[0]?.message?.content || "{}";
+        const intentClean = intentText.replace(/```json\n?|```/g, "").trim();
+        let intentData = {};
+        try { intentData = JSON.parse(intentClean); } catch { intentData = { raw: message }; }
+
+        // Store as pending action
+        const { data: newAction, error: actionErr } = await supabase.from("pending_actions").insert({
+          user_id: user.id,
+          action_type: detectedIntent,
+          intent_data: intentData,
+          status: "pending",
+          source_message_id: `${metadata?.source === "voice" ? "voice" : "chat"}_${crypto.randomUUID()}`,
+        }).select("id").single();
+
+        if (actionErr) {
+          console.error("[GEL] Failed to store pending action:", actionErr.message);
+        } else {
+          console.log(`[GEL] Stored pending ${detectedIntent}: ${JSON.stringify(intentData)}`);
+
+          // Audit log
+          await supabase.from("audit_log").insert({
+            user_id: user.id,
+            action: `gel_detect_${detectedIntent}`,
+            table_name: "pending_actions",
+            row_id: newAction?.id,
+            details: { action_type: detectedIntent, intent_data: intentData, source: metadata?.source || "chat" },
+          });
+
+          // Inject confirmation instruction into system prompt
+          systemPrompt += `\n\n## 🎯 ACTION DETECTED — CONFIRM WITH USER\nYou detected an actionable intent in the user's message. You MUST:\n1. Confirm what you understood: read back the action clearly\n2. Ask for explicit approval: "Should I go ahead?" or "Want me to set that?"\n3. Do NOT execute yet — wait for their confirmation\n- Action type: ${detectedIntent}\n- Extracted details: ${JSON.stringify(intentData)}\nBe natural and conversational. In voice mode, keep it brief.`;
+        }
+      } catch (intentErr) {
+        console.error("[GEL] Intent extraction failed:", intentErr);
+      }
     }
 
     console.log(`[CONTEXT] User: ${userName || "unknown"} | Facts: ${facts.length} | Decisions: ${decisions.length} | Patterns: ${patterns.length} | Memories: ${recentMems.length} | Semantic: ${semanticMems.length} | History: ${history.length} | Mode: ${response_mode || "batch"}`);
@@ -580,6 +866,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
               recentMems,
               semanticMems,
               matchedPatternIds,
+              metadata: metadata || null,
             });
 
             // Final event with metadata
@@ -646,6 +933,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       recentMems,
       semanticMems,
       matchedPatternIds,
+      metadata: metadata || null,
     });
 
     return new Response(
