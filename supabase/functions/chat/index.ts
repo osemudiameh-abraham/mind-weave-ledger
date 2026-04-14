@@ -319,6 +319,24 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "OpenAI not configured" }), { status: 500, headers: corsHeaders });
     }
 
+    // ─── Rate limiting (Architecture Section 19.4) ───
+    // 60 messages per hour per user. Uses messages table as the counter.
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentMessages } = await supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("role", "user")
+      .gte("created_at", oneHourAgo);
+
+    if ((recentMessages || 0) >= 60) {
+      console.log(`[RATE_LIMIT] User ${user.id.slice(0, 8)} exceeded 60 msg/hr`);
+      return new Response(
+        JSON.stringify({ error: "You've sent a lot of messages recently. Please wait a moment.", retry_after: 60 }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" } }
+      );
+    }
+
     // ─── Ensure conversation exists ───
     let convoId = section_id;
     if (!convoId) {
