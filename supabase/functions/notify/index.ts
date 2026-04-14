@@ -30,9 +30,17 @@ serve(async (req) => {
     const cronSecret = req.headers.get("x-cron-secret");
     const isInternalCall = cronSecret === Deno.env.get("CRON_SECRET");
 
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) {
+      console.error("[CRON] SUPABASE_SERVICE_ROLE_KEY not set — cannot process users");
+      return new Response(JSON.stringify({ error: "SERVICE_ROLE_KEY not configured" }), {
+        status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!,
+      serviceRoleKey,
     );
 
     const { user_id, notification_type, title, body, url, tag, silent } = await req.json();

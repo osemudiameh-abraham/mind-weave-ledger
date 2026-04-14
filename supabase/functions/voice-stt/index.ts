@@ -1,13 +1,15 @@
 /**
- * Voice STT Token Endpoint
+ * Voice STT Token Endpoint — SECURITY FIXED
  *
  * Architecture v5.5, Section 4.6:
- *   Returns a validated Deepgram API key and WebSocket URL for the client
- *   to connect directly to Deepgram using subprotocol auth.
+ *   Generates a SHORT-LIVED scoped Deepgram API key (60s TTL)
+ *   so the raw DEEPGRAM_API_KEY never reaches the browser.
  *
- * The Deepgram JS SDK uses `new WebSocket(url, ['token', apiKey])` for
- * browser connections. This Edge Function validates auth and returns the
- * key + URL for the client to use the same approach.
+ * Flow:
+ *   1. Validate user auth via Supabase JWT
+ *   2. Fetch Deepgram project_id
+ *   3. Create temporary key with 60s TTL and usage:write scope
+ *   4. Return temporary key + WebSocket URL to client
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -56,7 +58,7 @@ serve(async (req) => {
       );
     }
 
-    // ─── Get Deepgram API key ───
+    // ─── Get Deepgram API key (NEVER sent to client) ───
     const deepgramKey = Deno.env.get("DEEPGRAM_API_KEY");
     if (!deepgramKey) {
       return new Response(
@@ -65,35 +67,68 @@ serve(async (req) => {
       );
     }
 
-    // ─── Validate the key against Deepgram REST API ───
-    let keyValid = false;
-    let keyError = "";
-    try {
-      const testResp = await fetch("https://api.deepgram.com/v1/projects", {
-        headers: { Authorization: `Token ${deepgramKey}` },
-      });
-      keyValid = testResp.ok;
-      if (!keyValid) {
-        const body = await testResp.text();
-        keyError = `Deepgram returned ${testResp.status}: ${body.slice(0, 200)}`;
-        console.error(`[voice-stt] Deepgram key validation failed: ${keyError}`);
-      }
-    } catch (e) {
-      keyError = `Deepgram validation request failed: ${e.message}`;
-      console.error(`[voice-stt] ${keyError}`);
-    }
+    // ─── Get Deepgram project ID ───
+    const projectsRes = await fetch("https://api.deepgram.com/v1/projects", {
+      headers: { Authorization: `Token ${deepgramKey}` },
+    });
 
-    if (!keyValid) {
+    if (!projectsRes.ok) {
+      console.error(`[voice-stt] Deepgram projects API failed: ${projectsRes.status}`);
       return new Response(
-        JSON.stringify({
-          error: "Deepgram API key is invalid",
-          detail: keyError,
-        }),
+        JSON.stringify({ error: "Deepgram API key is invalid" }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // ─── Build Deepgram WebSocket URL (without key — auth via subprotocol) ───
+    const projectsData = await projectsRes.json();
+    const projectId = projectsData.projects?.[0]?.project_id;
+
+    if (!projectId) {
+      console.error("[voice-stt] No Deepgram project found");
+      return new Response(
+        JSON.stringify({ error: "No Deepgram project found" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ─── Create short-lived scoped key (60s TTL) ───
+    const tempKeyRes = await fetch(
+      `https://api.deepgram.com/v1/projects/${projectId}/keys`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${deepgramKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          comment: `temp_${user.id.slice(0, 8)}_${Date.now()}`,
+          scopes: ["usage:write"],
+          time_to_live_in_seconds: 60,
+        }),
+      }
+    );
+
+    if (!tempKeyRes.ok) {
+      const errText = await tempKeyRes.text();
+      console.error(`[voice-stt] Failed to create temp key: ${tempKeyRes.status} ${errText}`);
+      return new Response(
+        JSON.stringify({ error: "Failed to create temporary Deepgram key" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const tempKeyData = await tempKeyRes.json();
+    const tempKey = tempKeyData.key;
+
+    if (!tempKey) {
+      console.error("[voice-stt] Temp key response missing 'key' field:", JSON.stringify(tempKeyData));
+      return new Response(
+        JSON.stringify({ error: "Invalid temp key response from Deepgram" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ─── Build Deepgram WebSocket URL ───
     const dgParams = new URLSearchParams({
       model: "nova-2",
       language: "en",
@@ -108,13 +143,11 @@ serve(async (req) => {
 
     const dgUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
 
-    console.log(`[voice-stt] Token issued for user ${user.id.slice(0, 8)}… (key validated)`);
+    console.log(`[voice-stt] Temp key issued for user ${user.id.slice(0, 8)} (60s TTL)`);
 
-    // Return URL and key separately.
-    // Client uses: new WebSocket(url, ['token', key])
-    // This is the same approach as the Deepgram JS SDK for browsers.
+    // Return TEMPORARY key only — raw DEEPGRAM_API_KEY never leaves the server
     return new Response(
-      JSON.stringify({ url: dgUrl, key: deepgramKey }),
+      JSON.stringify({ url: dgUrl, key: tempKey }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

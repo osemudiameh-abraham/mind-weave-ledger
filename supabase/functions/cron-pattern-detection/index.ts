@@ -37,9 +37,17 @@ serve(async (req) => {
   }
 
   try {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) {
+      console.error("[CRON] SUPABASE_SERVICE_ROLE_KEY not set — cannot process users");
+      return new Response(JSON.stringify({ error: "SERVICE_ROLE_KEY not configured" }), {
+        status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!,
+      serviceRoleKey,
     );
 
     const openaiKey = Deno.env.get("OPENAI_API_KEY");

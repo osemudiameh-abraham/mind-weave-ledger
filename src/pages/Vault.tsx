@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Brain, Briefcase, Heart, Target, User, Loader2, Pencil, Trash2, Check, X } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+
+const VAULT_EDIT_LIMIT = 30; // Max edits per hour
 
 const categories = [
   { key: "all", label: "All", icon: null },
@@ -32,6 +34,20 @@ const Vault = () => {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const editCountRef = useRef<{ count: number; resetAt: number }>({ count: 0, resetAt: Date.now() + 3600000 });
+
+  const checkEditLimit = (): boolean => {
+    const now = Date.now();
+    if (now > editCountRef.current.resetAt) {
+      editCountRef.current = { count: 0, resetAt: now + 3600000 };
+    }
+    if (editCountRef.current.count >= VAULT_EDIT_LIMIT) {
+      toast.error("Too many edits. Please wait before making more changes.");
+      return false;
+    }
+    editCountRef.current.count++;
+    return true;
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -65,6 +81,7 @@ const Vault = () => {
   // Edit = supersede old fact + insert corrected fact (Architecture Section 6.2)
   const saveEdit = async (fact: Fact) => {
     if (!user || !editValue.trim()) return;
+    if (!checkEditLimit()) return;
 
     // Supersede the old fact
     await supabase.from("memory_facts").update({
@@ -102,6 +119,7 @@ const Vault = () => {
   // Delete = set valid_until (soft delete, preserves history)
   const deleteFact = async (factId: string) => {
     if (!user) return;
+    if (!checkEditLimit()) return;
 
     const { error } = await supabase.from("memory_facts").update({
       valid_until: new Date().toISOString(),
