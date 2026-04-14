@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -127,6 +127,12 @@ const SignUp = () => {
 
         <p className="text-center mt-5">
           <button onClick={() => navigate("/login")} className="text-[13px] text-primary font-medium hover:underline transition-all">Already have an account? Sign in</button>
+        </p>
+
+        <p className="text-[11px] text-muted-foreground text-center mt-4 leading-relaxed">
+          By creating an account, you agree to Seven's{" "}
+          <Link to="/terms" className="text-primary hover:underline">Terms</Link> &{" "}
+          <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
         </p>
       </motion.div>
     </div>

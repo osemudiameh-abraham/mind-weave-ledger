@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -218,8 +218,8 @@ const Login = () => {
           className="text-[11px] text-muted-foreground text-center mt-6 leading-relaxed"
         >
           By continuing, you agree to Seven's{" "}
-          <span className="text-primary cursor-pointer">Terms</span> &{" "}
-          <span className="text-primary cursor-pointer">Privacy Policy</span>
+          <Link to="/terms" className="text-primary hover:underline">Terms</Link> &{" "}
+          <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
         </motion.p>
       </motion.div>
     </div>
