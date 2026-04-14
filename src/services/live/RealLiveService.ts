@@ -70,13 +70,19 @@ type DeepgramMessage = DeepgramResult | DeepgramUtteranceEnd | DeepgramError;
 // resets the gesture requirement and play() silently fails.
 const sharedAudioElement = new Audio();
 
+// Detect mobile: on phones, speaker and mic are close together.
+// TTS at full volume drowns out the user's voice, making barge-in
+// and speech recognition impossible. Lower volume on mobile.
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const TTS_VOLUME = isMobile ? 0.45 : 1.0;
+
 /** Call from a user gesture (tap handler) to unlock audio on mobile. */
 export function unlockMobileAudio(): void {
   sharedAudioElement.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
   sharedAudioElement.volume = 0;
   sharedAudioElement.play().then(() => {
     sharedAudioElement.pause();
-    sharedAudioElement.volume = 1;
+    sharedAudioElement.volume = TTS_VOLUME;
     sharedAudioElement.currentTime = 0;
   }).catch(() => {});
 }
@@ -194,6 +200,7 @@ class AudioQueue {
       // Reuse the shared Audio element — mobile browsers require this.
       // Creating new Audio() each time resets the gesture requirement.
       sharedAudioElement.src = url;
+      sharedAudioElement.volume = TTS_VOLUME;
       this.currentAudio = sharedAudioElement;
 
       sharedAudioElement.onended = () => {
@@ -267,10 +274,10 @@ export class RealLiveService implements LiveService {
 
   // TTS / AudioQueue
   private audioQueue: AudioQueue;
-  // After TTS ends, mute for a short cooldown to catch residual echo.
-  // Architecture Section 4.6: 500ms, NOT seconds.
+  // After TTS ends, brief cooldown to catch residual echo tail.
+  // 200ms — just enough for echo, not enough to lose real speech on mobile.
   private ttsCooldownUntil = 0;
-  private static TTS_COOLDOWN_MS = 500;
+  private static TTS_COOLDOWN_MS = 200;
   private lastSpokenText = "";
 
   // Streaming LLM abort controller (for barge-in cancellation)
@@ -870,7 +877,10 @@ function float32ToInt16(float32: Float32Array): Int16Array {
 /**
  * Detect if a transcript is an echo of the TTS output.
  * Compares significant words (3+ chars) between the transcript and the
- * last spoken text. If ≥40% overlap, it's likely echo.
+ * last spoken text. Conservative: requires 65% overlap AND fewer than 4
+ * unique (non-echo) words. This prevents discarding real user speech
+ * that happens to share some words with the TTS output — especially on
+ * mobile where speaker audio bleeds into the mic.
  */
 function isEcho(transcript: string, lastSpoken: string): boolean {
   const normalize = (s: string) =>
@@ -892,6 +902,12 @@ function isEcho(transcript: string, lastSpoken: string): boolean {
     if (spokenWords.has(word)) matches++;
   }
 
+  const uniqueWords = transcriptWords.length - matches;
   const overlapRatio = matches / transcriptWords.length;
-  return overlapRatio >= 0.4;
+
+  // If the user said 4+ words that aren't in the TTS output, it's real speech
+  if (uniqueWords >= 4) return false;
+
+  // Require 65% overlap to classify as echo (was 40% — too aggressive for mobile)
+  return overlapRatio >= 0.65;
 }
