@@ -218,18 +218,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteAccount = useCallback(async () => {
     if (!state.user) return;
-    // Delete user data in parallel
+    const uid = state.user.id;
+    // Delete ALL user data from ALL tables (Architecture Section 19.8)
     await Promise.allSettled([
-      supabase.from("identity_profiles").delete().eq("user_id", state.user.id),
-      supabase.from("memories_structured").delete().eq("user_id", state.user.id),
-      supabase.from("memory_facts").delete().eq("user_id", state.user.id),
-      supabase.from("decisions").delete().eq("user_id", state.user.id),
-      supabase.from("sections").delete().eq("user_id", state.user.id),
-      supabase.from("user_preferences").delete().eq("user_id", state.user.id),
+      supabase.from("messages").delete().eq("user_id", uid),
+      supabase.from("memories_structured").delete().eq("user_id", uid),
+      supabase.from("memory_facts").delete().eq("user_id", uid),
+      supabase.from("memory_traces").delete().eq("user_id", uid),
+      supabase.from("decisions").delete().eq("user_id", uid),
+      supabase.from("outcomes").delete().eq("user_id", uid),
+      supabase.from("sections").delete().eq("user_id", uid),
+      supabase.from("situations").delete().eq("user_id", uid),
+      supabase.from("situation_entities").delete().eq("user_id", uid),
+      supabase.from("behaviour_patterns").delete().eq("user_id", uid),
+      supabase.from("identity_model").delete().eq("user_id", uid),
+      supabase.from("identity_profiles").delete().eq("user_id", uid),
+      supabase.from("pending_actions").delete().eq("user_id", uid),
+      supabase.from("notification_subscriptions").delete().eq("user_id", uid),
+      supabase.from("notification_log").delete().eq("user_id", uid),
+      supabase.from("documents").delete().eq("user_id", uid),
+      supabase.from("digest_entries").delete().eq("user_id", uid),
+      supabase.from("subscriptions").delete().eq("user_id", uid),
+      supabase.from("user_preferences").delete().eq("user_id", uid),
+      supabase.from("review_completion_events").delete().eq("user_id", uid),
+      supabase.from("audit_log").delete().eq("user_id", uid),
+      supabase.from("oauth_tokens").delete().eq("user_id", uid),
     ]);
     await supabase.auth.signOut();
     currentUserId.current = null;
     localStorage.removeItem("seven_user_name");
+    localStorage.removeItem("seven_trial_popup_shown");
     setState({ user: null, isAuthenticated: false, isVerified: false, loading: false });
   }, [state.user]);
 

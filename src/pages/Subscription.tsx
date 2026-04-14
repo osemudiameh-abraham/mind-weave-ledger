@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
-import { Check, Crown, Sparkles, Clock } from "lucide-react";
-import { useState } from "react";
+import { Check, Crown, Sparkles } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useTrialStatus } from "@/hooks/use-trial-status";
 import { toast } from "sonner";
@@ -11,52 +10,38 @@ const features = [
   "All connected devices",
   "Real-time Live sessions",
   "Autonomous actions",
-  "Priority voice processing",
-  "Advanced pattern detection",
-  "Emergency response system",
-  "Custom wake words",
+  "Voice processing",
+  "Pattern detection",
+  "Document intelligence",
+  "Weekly digest",
   "Early access to features",
 ];
 
 const Subscription = () => {
-  const [billing, setBilling] = useState<"monthly" | "annual">("annual");
-  const { isTrialActive, isTrialExpired, daysRemaining, startTrial } = useTrialStatus();
+  const { isTrialActive, startTrial, status } = useTrialStatus();
   const navigate = useNavigate();
 
-  const handleStartTrial = () => {
+  const handleActivateBeta = () => {
     startTrial();
-    toast.success("Your 14-day free trial has started!");
+    toast.success("Beta access activated! Enjoy full access to Seven Mynd.");
     navigate("/home");
   };
+
+  const isBetaActive = isTrialActive || status === "trial";
 
   return (
     <AppLayout>
       <div className="pt-16 pb-28 px-4 max-w-3xl mx-auto">
-        {/* Trial status banner */}
-        {isTrialActive && (
+        {isBetaActive && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-6 flex items-center gap-3 p-4 rounded-2xl bg-primary/10 border border-primary/20"
           >
-            <Clock size={20} className="text-primary shrink-0" />
+            <Sparkles size={20} className="text-primary shrink-0" />
             <div>
-              <p className="text-[14px] font-medium text-foreground">{daysRemaining} days remaining</p>
-              <p className="text-[12px] text-muted-foreground">Your free trial is active</p>
-            </div>
-          </motion.div>
-        )}
-
-        {isTrialExpired && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 flex items-center gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20"
-          >
-            <Clock size={20} className="text-destructive shrink-0" />
-            <div>
-              <p className="text-[14px] font-medium text-foreground">Trial ended</p>
-              <p className="text-[12px] text-muted-foreground">Subscribe to keep full access</p>
+              <p className="text-[14px] font-medium text-foreground">Beta Access — Active</p>
+              <p className="text-[12px] text-muted-foreground">You have full access to all features</p>
             </div>
           </motion.div>
         )}
@@ -66,73 +51,30 @@ const Subscription = () => {
             <Crown size={24} className="text-primary" />
           </div>
           <h1 className="text-[24px] font-semibold text-foreground tracking-tight">
-            {isTrialActive ? "You're on Seven Pro" : isTrialExpired ? "Continue with Seven" : "Unlock Seven"}
+            {isBetaActive ? "You're in the Beta" : "Join the Seven Mynd Beta"}
           </h1>
-          <p className="text-[14px] text-muted-foreground mt-2 max-w-[280px] mx-auto leading-relaxed">
-            {isTrialActive
-              ? "Enjoying full access. Subscribe anytime to keep it."
-              : isTrialExpired
-              ? "Your trial has ended. Subscribe to keep all features."
-              : "Start with 14 days free. Full access, no card required."}
+          <p className="text-[14px] text-muted-foreground mt-2 max-w-[300px] mx-auto leading-relaxed">
+            {isBetaActive
+              ? "You have full access to Seven Mynd. Thank you for being an early adopter."
+              : "Get free access to the full Seven Mynd experience. Help us shape the future of cognitive continuity."}
           </p>
         </motion.div>
 
-        {/* Billing toggle */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex items-center justify-center gap-1 p-1 rounded-xl bg-muted/50 mb-6 max-w-[280px] mx-auto"
-        >
-          <button
-            onClick={() => setBilling("monthly")}
-            className={`flex-1 py-2 rounded-lg text-[13px] font-medium transition-all ${
-              billing === "monthly"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground"
-            }`}
-          >
-            Monthly
-          </button>
-          <button
-            onClick={() => setBilling("annual")}
-            className={`flex-1 py-2 rounded-lg text-[13px] font-medium transition-all ${
-              billing === "annual"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground"
-            }`}
-          >
-            Annual
-          </button>
-        </motion.div>
-
-        {/* Plan card */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
           className="relative rounded-2xl border border-primary bg-primary/[0.03] shadow-[0_0_20px_-6px_hsl(var(--primary)/0.15)] p-6"
         >
-          {billing === "annual" && (
-            <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-primary-foreground text-[11px] font-semibold rounded-full uppercase tracking-wide flex items-center gap-1">
-              <Sparkles size={12} /> 2 Months Free
-            </span>
-          )}
+          <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-primary-foreground text-[11px] font-semibold rounded-full uppercase tracking-wide flex items-center gap-1">
+            <Sparkles size={12} /> Beta
+          </span>
 
           <div className="text-center mb-6">
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-[36px] font-bold text-foreground">
-                {billing === "monthly" ? "£39" : "£390"}
-              </span>
-              <span className="text-[14px] text-muted-foreground">
-                {billing === "monthly" ? "/month" : "/year"}
-              </span>
+              <span className="text-[36px] font-bold text-foreground">Free</span>
             </div>
-            {billing === "annual" && (
-              <p className="text-[12px] text-primary mt-1 font-medium">
-                £32.50/month · Save £78/year
-              </p>
-            )}
+            <p className="text-[12px] text-primary mt-1 font-medium">Full access during beta period</p>
           </div>
 
           <div className="space-y-3 mb-6">
@@ -144,15 +86,21 @@ const Subscription = () => {
             ))}
           </div>
 
-          <button
-            onClick={isTrialActive ? undefined : isTrialExpired ? undefined : handleStartTrial}
-            className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground text-[14px] font-medium hover:bg-primary/90 transition-colors"
-          >
-            {isTrialActive ? "Subscribe Now" : isTrialExpired ? "Subscribe Now" : "Start 14-Day Free Trial"}
-          </button>
+          {!isBetaActive ? (
+            <button
+              onClick={handleActivateBeta}
+              className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground text-[14px] font-medium hover:bg-primary/90 transition-colors"
+            >
+              Activate Beta Access
+            </button>
+          ) : (
+            <div className="w-full py-3.5 rounded-xl bg-muted text-muted-foreground text-[14px] font-medium text-center">
+              Beta Access Active
+            </div>
+          )}
 
           <p className="text-[11px] text-muted-foreground text-center mt-3">
-            {isTrialActive || isTrialExpired ? "Secure payment · Cancel anytime" : "No credit card required · Cancel anytime"}
+            No credit card required. Paid plans coming soon.
           </p>
         </motion.div>
 

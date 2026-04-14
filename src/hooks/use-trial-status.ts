@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
-const TRIAL_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const TRIAL_DURATION_MS = 365 * 24 * 60 * 60 * 1000; // Beta: 1 year (effectively unlimited)
 const POPUP_KEY = "seven_trial_popup_shown"; // UI-only — safe in localStorage
 
 interface TrialState {

@@ -23,6 +23,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Subscription = lazy(() => import("./pages/Subscription"));
 const Live = lazy(() => import("./pages/Live"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const Terms = lazy(() => import("./pages/Terms"));
 const Library = lazy(() => import("./pages/Library"));
 const Memory = lazy(() => import("./pages/Memory"));
 const Profile = lazy(() => import("./pages/Profile"));
@@ -55,6 +56,7 @@ const App = () => (
             <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
             <Route path="/live" element={<ProtectedRoute><Live /></ProtectedRoute>} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<Terms />} />
             <Route path="/library" element={<ProtectedRoute><Library /></ProtectedRoute>} />
             <Route path="/memory" element={<ProtectedRoute><Memory /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
