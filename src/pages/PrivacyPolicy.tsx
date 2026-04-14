@@ -1,327 +1,75 @@
 import { motion } from "framer-motion";
-import { Shield, Lock, Eye, Trash2, Download, Mail } from "lucide-react";
-import AppLayout from "@/components/AppLayout";
+import { Shield, Lock, Mail, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const PrivacyPolicy = () => {
+  const navigate = useNavigate();
+
   return (
-    <AppLayout>
-      <div className="pt-14 pb-24 px-4 max-w-3xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-2 mb-6"
-        >
+    <div className="min-h-screen bg-background">
+      <div className="pt-6 pb-24 px-4 max-w-3xl mx-auto">
+        <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors mb-6"><ArrowLeft size={14} />Back</motion.button>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Shield size={20} className="text-primary" />
-            </div>
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Shield size={20} className="text-primary" /></div>
             <div>
               <h1 className="text-[22px] font-semibold text-foreground tracking-tight">Privacy Policy</h1>
-              <p className="text-[12px] text-muted-foreground">Version 1.0 · Effective 10 April 2026</p>
+              <p className="text-[12px] text-muted-foreground">Version 1.1 · Effective 14 April 2026 · Last updated 14 April 2026</p>
             </div>
           </div>
         </motion.div>
-
-        {/* Trust banner */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mb-6"
-        >
-          <p className="text-[14px] font-medium text-foreground leading-relaxed">
-            Your memory, your decisions, and your identity data belong to you — not to us.
-          </p>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mb-6">
+          <p className="text-[14px] font-medium text-foreground leading-relaxed">Your memory, your decisions, and your identity data belong to you — not to us.</p>
           <div className="flex flex-col gap-2 mt-3">
-            {[
-              "We never sell your data",
-              "We never use your data to train AI models",
-              "We never share your data with advertisers",
-              "You can delete everything at any time",
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-2">
-                <Lock size={12} className="text-primary shrink-0" />
-                <span className="text-[13px] text-foreground/80">{item}</span>
-              </div>
-            ))}
+            {["We never sell your data","We never use your data to train AI models","We never share your data with advertisers","You can delete everything at any time"].map((item) => (<div key={item} className="flex items-center gap-2"><Lock size={12} className="text-primary shrink-0" /><span className="text-[13px] text-foreground/80">{item}</span></div>))}
           </div>
         </motion.div>
-
-        {/* Sections */}
         <div className="flex flex-col gap-5">
-          <PolicySection
-            index={0}
-            title="1. Information We Collect"
-            subsections={[
-              {
-                subtitle: "Information You Provide",
-                items: [
-                  "Account information: email, name, profile details",
-                  "Identity information: role, company, city, timezone, goals",
-                  "Conversation data: messages, voice transcripts, decisions",
-                  "Decision records: logged decisions, review dates, outcomes",
-                  "Documents: files you upload for processing",
-                ],
-              },
-              {
-                subtitle: "Collected Automatically",
-                items: [
-                  "Usage data: features used, session duration, interaction patterns",
-                  "Device information: device type, OS version, app version",
-                  "Voice data: processed in real time — raw audio is never stored",
-                  "IP address: for security and fraud prevention only",
-                ],
-              },
-              {
-                subtitle: "Third-Party Services (With Your Consent)",
-                items: [
-                  "Google Account: email and name via OAuth sign-in",
-                  "Gmail: send emails on your behalf (per-email approval required)",
-                  "Google Calendar: add events (per-event approval required)",
-                ],
-                note: "Seven never reads your inbox or calendar without explicit consent. Every action requires your individual approval.",
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={1}
-            title="2. How We Use Your Information"
-            subsections={[
-              {
-                subtitle: "Core Service",
-                items: [
-                  "Personalised AI responses grounded in your memory and identity",
-                  "Store decisions, outcomes, and facts for cross-session recall",
-                  "Detect behavioural patterns and surface protective warnings",
-                  "Send review reminders when decisions are due",
-                  "Execute governed actions you explicitly approve",
-                ],
-              },
-              {
-                subtitle: "What We Do NOT Do",
-                items: [
-                  "We do NOT sell your personal data to third parties",
-                  "We do NOT use conversations to train AI models",
-                  "We do NOT use your data for advertising or profiling",
-                  "We do NOT share your data with data brokers",
-                ],
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={2}
-            title="3. Data Storage & Security"
-            subsections={[
-              {
-                subtitle: "Security Measures",
-                items: [
-                  "All data encrypted in transit using TLS 1.3",
-                  "Sensitive fields encrypted at rest using AES-256-GCM with per-row keys",
-                  "Row Level Security (RLS) — no user can access another's data",
-                  "OAuth tokens stored encrypted, never exposed client-side",
-                  "Regular security audits and vulnerability assessments",
-                ],
-              },
-              {
-                subtitle: "Data Minimisation",
-                items: [
-                  "Voice audio is never stored — only transcripts",
-                  "Raw documents processed and discarded unless you save them",
-                  "No user ID or email sent to third-party AI services",
-                ],
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={3}
-            title="4. Data Retention"
-            subsections={[
-              {
-                subtitle: "Retention Periods",
-                items: [
-                  "Conversation history: until account deletion (deletable individually)",
-                  "Memory facts: until account deletion or user deletion",
-                  "Voice transcripts: until account deletion (raw audio never stored)",
-                  "Uploaded documents: processing session only (unless saved)",
-                  "Usage analytics: 24 months, aggregated and anonymised",
-                  "Security logs: 12 months (fraud prevention)",
-                ],
-                note: "When you delete your account, all personal data is permanently deleted within 30 days.",
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={4}
-            title="5. Third-Party Services"
-            subsections={[
-              {
-                subtitle: "Services We Use",
-                items: [
-                  "Supabase: database & auth — data stored encrypted in EU",
-                  "OpenAI: AI responses — message text only, no user ID",
-                  "Deepgram: voice-to-text — audio stream only, not stored",
-                  "ElevenLabs: text-to-speech — response text only",
-                  "Resend: transactional email — email address & notification content",
-                  "Google OAuth: sign-in & Gmail/Calendar — with explicit consent",
-                ],
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={5}
-            title="6. Your Rights"
-            subsections={[
-              {
-                subtitle: "Under UK GDPR / EU GDPR / CCPA",
-                items: [
-                  "Right to Access: request a complete copy of your data",
-                  "Right to Rectification: correct inaccurate or incomplete data",
-                  "Right to Erasure: delete your account and all data (within 30 days)",
-                  "Right to Portability: export all data in JSON from Settings",
-                  "Right to Restriction: restrict processing in certain cases",
-                  "Right to Object: object to processing based on legitimate interests",
-                  "Right to Withdraw Consent: revoke permissions anytime from Settings",
-                  "Right to Complain: lodge a complaint with the ICO (UK) or your national authority",
-                ],
-                note: "We respond to all rights requests within 30 days.",
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={6}
-            title="7. Children's Privacy"
-            subsections={[
-              {
-                subtitle: "",
-                items: [
-                  "Seven is not directed at children under 13 (or 16 in EU/UK)",
-                  "We do not knowingly collect personal data from children",
-                  "Contact hello@sevenmynd.com if you believe a child has provided data",
-                ],
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={7}
-            title="8. Cookies & Tracking"
-            subsections={[
-              {
-                subtitle: "",
-                items: [
-                  "Essential cookies only: authentication and preferences",
-                  "No advertising cookies, tracking pixels, or third-party profiling",
-                  "You can control cookies through your browser settings",
-                ],
-              },
-            ]}
-          />
-
-          <PolicySection
-            index={8}
-            title="9. Changes to This Policy"
-            subsections={[
-              {
-                subtitle: "",
-                items: [
-                  "We notify you via email at least 30 days before material changes",
-                  "A prominent notice is displayed in the app",
-                  "You may delete your account if you do not agree to changes",
-                ],
-              },
-            ]}
-          />
+          <S i={0} t="1. Data Controller" c={["Seven Mynd is operated by Abraham Osemudiameh, trading as Seven Mynd. We are the data controller responsible for your personal data under the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018.","Contact: privacy@sevenmynd.com","Website: sevenmynd.com","We are in the process of registering with the Information Commissioner's Office (ICO). Our registration number will be published here once confirmed."]} />
+          <S i={1} t="2. Information We Collect" ss={[{st:"Information You Provide Directly",it:["Account information: your name and email address when you create an account","Identity information: role, company, city, timezone, and goals provided during onboarding","Conversation data: text messages and voice transcripts you send to Seven Mynd","Decision records: decisions you log, review dates, and outcomes you record","Documents: files you upload for processing (PDFs, Word documents, spreadsheets)","Memory corrections: edits you make to facts in your memory vault"]},{st:"Information Collected Automatically",it:["Usage data: which features you use and how often (for product improvement only)","Device information: device type, operating system, and browser type","IP address: for security, fraud prevention, and approximate location for timezone detection","Error and crash data: anonymised technical reports when something goes wrong"]},{st:"Information Processed But Not Stored",it:["Voice audio: processed in real time for speech-to-text conversion — raw audio is never stored on our servers. Only the resulting text transcript is retained","Camera and screen frames (Live mode): processed in real time for visual analysis — frames are never stored unless you explicitly choose to save them"]},{st:"Third-Party Services (With Your Explicit Consent Only)",it:["Google Account: your name and email address via OAuth sign-in","Gmail: sending emails on your behalf — each email requires your individual approval before sending","Google Calendar: adding calendar events — each event requires your individual approval"],n:"Seven Mynd never reads your inbox, existing emails, or calendar entries. It can only send emails or create events that you explicitly approve one at a time. You can revoke these permissions at any time from Settings."}]} />
+          <S i={2} t="3. Lawful Basis for Processing" c={["Under UK GDPR, we process your personal data on the following lawful bases:"]} ss={[{st:"Contractual Necessity (Article 6(1)(b))",it:["Providing the Seven Mynd service: storing your messages, memories, decisions, and identity model","Processing your messages through AI to generate personalised responses","Managing your account, authentication, and session security"]},{st:"Legitimate Interests (Article 6(1)(f))",it:["Security: preventing fraud, detecting unauthorised access, and protecting your account","Product improvement: understanding how features are used to make Seven Mynd better (using anonymised, aggregated data only)","Error monitoring: detecting and fixing technical problems"],n:"You have the right to object to processing based on legitimate interests at any time by contacting privacy@sevenmynd.com."},{st:"Consent (Article 6(1)(a))",it:["Gmail integration: sending emails on your behalf","Google Calendar integration: creating calendar events","Voice interaction: processing your speech through our voice service","Document upload: processing files you choose to upload","Push notifications: sending decision review reminders and weekly digests"],n:"You can withdraw consent for any of these features at any time from Settings. Withdrawal of consent does not affect the lawfulness of processing carried out before withdrawal."}]} />
+          <S i={3} t="4. How We Use Your Information" ss={[{st:"Core Service Delivery",it:["Generate personalised AI responses grounded in your memory, identity, and decision history","Store and recall your decisions, outcomes, and canonical facts across sessions","Detect behavioural patterns and surface protective warnings before you repeat past mistakes","Send reminders when your decisions are due for review","Execute governed actions (emails, reminders, calendar events) that you explicitly approve","Process uploaded documents and extract relevant facts into your memory"]},{st:"What We Do NOT Do",it:["We do NOT sell your personal data to any third party, under any circumstances","We do NOT use your conversations, decisions, or personal data to train AI models","We do NOT use your data for advertising, ad targeting, or user profiling for marketing","We do NOT share your data with data brokers, analytics companies, or advertisers","We do NOT make automated decisions that produce legal or similarly significant effects on you"]}]} />
+          <S i={4} t="5. Third-Party Services and Data Sharing" c={["Seven Mynd uses third-party services to provide its functionality. We only share the minimum data necessary for each service to function. We never share your name, email address, or user ID with AI processing services."]} ss={[{st:"AI Processing",it:["OpenAI (GPT-4o, GPT-4o-mini, text-to-speech): receives your message text for generating AI responses and converting response text to speech audio. Does not receive your user ID, email, name, or conversation history beyond the current context window","Google (Gemini Flash, Gemini 2.0 Flash): receives query text for web research grounding and visual frames from Live mode for real-time analysis. Does not receive your user ID or personal information","Anthropic (Claude): may receive document text for long-context processing of large documents. Does not receive your user ID or personal information"]},{st:"Voice Processing",it:["Deepgram: receives audio stream for real-time speech-to-text transcription. Audio is processed in real time and not stored by Deepgram after processing. Does not receive your user ID or personal information"]},{st:"Infrastructure",it:["Supabase: hosts our database and authentication system. All data stored encrypted","Vercel: hosts our web application and serverless functions","Sentry: receives anonymised crash reports and performance data for error monitoring. No personal data is included in crash reports","Resend: delivers transactional emails (verification, review reminders, weekly digests). Receives your email address and notification content"]},{st:"Authentication",it:["Google OAuth: provides sign-in functionality. We receive your name and email address from your Google account"],n:"We maintain Data Processing Agreements (DPAs) with all third-party services that process personal data on our behalf, as required by UK GDPR Article 28."}]} />
+          <S i={5} t="6. Data Storage and Security" ss={[{st:"Security Measures",it:["All data encrypted in transit using TLS 1.3","Sensitive data fields encrypted at rest using AES-256-GCM with per-row initialisation vectors","Row-Level Security (RLS) enforced at the database level — no user can access another user's data, even in the event of an application-level vulnerability","OAuth tokens stored encrypted and never exposed to client-side code","API keys stored as server-side environment variables, never included in client-side code","Authentication via secure httpOnly cookies with SameSite=Lax and Secure flags","Rate limiting on all API endpoints to prevent abuse","Per-user daily cost caps to prevent service abuse"]},{st:"Data Minimisation",it:["Voice audio is processed in real time and never stored — only the text transcript is retained","Camera and screen frames from Live mode are processed and immediately discarded unless you choose to save","No user ID or email address is sent to AI processing services (OpenAI, Google, Anthropic)","The three-tier memory extraction system processes 80% of messages locally without any external API call"]},{st:"Data Breach Response",it:["In the event of a personal data breach, we will notify the ICO within 72 hours as required by UK GDPR Article 33","If the breach is likely to result in a high risk to your rights and freedoms, we will notify you without undue delay as required by UK GDPR Article 34","All breach notifications will include: the nature of the breach, the data affected, the likely consequences, and the measures taken to address it"]}]} />
+          <S i={6} t="7. Data Retention" ss={[{st:"Retention Periods",it:["Conversation messages: retained until you delete them individually or delete your account","Memory facts and decisions: retained until you delete them individually or delete your account","Voice transcripts: retained as message text until you delete them or delete your account. Raw audio is never retained","Uploaded documents: original files are processed and then deleted. Extracted content is retained as memory until you delete it or your account","Usage analytics: retained for 24 months in aggregated and anonymised form","Security logs: retained for 12 months for fraud prevention and security incident investigation","Error reports (Sentry): retained for 90 days"]},{st:"Account Deletion",it:["When you delete your account from Settings, all your personal data is permanently and irreversibly deleted within 30 days","This includes: messages, memories, facts, decisions, outcomes, patterns, identity model, traces, sections, preferences, device records, notification history, and uploaded documents","Deletion is cascading — when your account is deleted, every piece of data linked to your account is deleted","Anonymised, aggregated analytics data that cannot be linked back to you may be retained","Data in encrypted backups is purged within 30 days of account deletion"]}]} />
+          <S i={7} t="8. Your Rights" c={["Under UK GDPR, EU GDPR, and the California Consumer Privacy Act (CCPA), you have the following rights:"]} ss={[{st:"Your Data Rights",it:["Right of Access (Article 15): request a complete copy of all personal data we hold about you","Right to Rectification (Article 16): correct inaccurate or incomplete personal data, including editing memory facts directly in your vault","Right to Erasure (Article 17): delete your account and all personal data. Available directly from Settings","Right to Data Portability (Article 20): export all your data in machine-readable JSON format from Settings","Right to Restrict Processing (Article 18): request restriction of processing in certain circumstances","Right to Object (Article 21): object to processing based on our legitimate interests","Right to Withdraw Consent: revoke any consent-based permissions at any time from Settings, without affecting the lawfulness of prior processing","Right Not to Be Subject to Automated Decision-Making (Article 22): Seven Mynd does not make automated decisions that produce legal or similarly significant effects on you. AI responses are advisory only"]},{st:"How to Exercise Your Rights",it:["Most rights can be exercised directly within the app via Settings (data export, account deletion, consent management, memory editing)","For any rights request, email privacy@sevenmynd.com","We will respond to all rights requests within 30 days (or 1 month as required by UK GDPR)","We will not charge a fee for reasonable rights requests","We may ask you to verify your identity before processing a request"]},{st:"Right to Complain",it:["UK residents: you have the right to lodge a complaint with the Information Commissioner's Office (ICO) at ico.org.uk or by calling 0303 123 1113","EU residents: you have the right to lodge a complaint with your national data protection authority","California residents: you have additional rights under the CCPA, including the right to know what personal information is collected, the right to delete, and the right to opt out of the sale of personal information. We do not sell personal information"]}]} />
+          <S i={8} t="9. International Data Transfers" ss={[{st:"",it:["Some of our third-party service providers (OpenAI, Deepgram, Vercel, Sentry) are based in the United States","Where personal data is transferred outside the UK or EEA, we ensure appropriate safeguards are in place, including Standard Contractual Clauses (SCCs) approved by the ICO and European Commission","We only transfer the minimum data necessary — typically message text without user identity — and ensure each provider has adequate data protection measures","You can request details of the specific safeguards in place by contacting privacy@sevenmynd.com"]}]} />
+          <S i={9} t="10. AI-Generated Content" ss={[{st:"",it:["Seven Mynd responses are generated by artificial intelligence systems","AI-generated responses are advisory only and should not be treated as professional advice (legal, financial, medical, or otherwise)","Seven Mynd is an AI assistant — it is not a human, and its responses may sometimes be inaccurate or incomplete","Pattern detection and behavioural warnings are based on statistical analysis of your data and may not always be correct","Decisions about your life, career, finances, health, or relationships should always involve your own judgement and, where appropriate, qualified human professionals"]}]} />
+          <S i={10} t="11. Children's Privacy" ss={[{st:"",it:["Seven Mynd is not directed at or designed for children under the age of 16","We do not knowingly collect personal data from children under 16","If we become aware that we have collected personal data from a child under 16, we will delete that data immediately","If you believe a child under 16 has provided personal data to Seven Mynd, please contact us immediately at privacy@sevenmynd.com"]}]} />
+          <S i={11} t="12. Cookies and Local Storage" ss={[{st:"",it:["Seven Mynd uses essential cookies and local storage only for authentication, session management, and user preferences","We do not use advertising cookies, tracking pixels, third-party analytics cookies, or any form of cross-site tracking","Essential cookies cannot be disabled as they are necessary for the service to function","No personal data is stored in cookies — they contain only session tokens and preference flags"]}]} />
+          <S i={12} t="13. Changes to This Policy" ss={[{st:"",it:["We will notify you by email at least 30 days before any material changes to this policy take effect","A prominent notice will be displayed within the app when changes are made","The 'Last updated' date at the top of this policy will be revised","If you do not agree to any changes, you may delete your account before the changes take effect","Continued use of Seven Mynd after the effective date of changes constitutes acceptance of the updated policy","Previous versions of this policy will be made available upon request"]}]} />
         </div>
-
-        {/* Contact */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-card border border-border rounded-2xl p-5 mt-6"
-        >
-          <h3 className="text-[14px] font-medium text-foreground mb-3">Contact & Data Controller</h3>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card border border-border rounded-2xl p-5 mt-6">
+          <h3 className="text-[14px] font-medium text-foreground mb-3">Contact and Data Controller</h3>
           <div className="flex flex-col gap-2">
-            <p className="text-[13px] text-foreground/80">Seven Mynd Ltd</p>
-            <div className="flex items-center gap-2">
-              <Mail size={13} className="text-muted-foreground" />
-              <span className="text-[13px] text-primary">hello@sevenmynd.com</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Lock size={13} className="text-muted-foreground" />
-              <span className="text-[13px] text-primary">privacy@sevenmynd.com</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Shield size={13} className="text-muted-foreground" />
-              <span className="text-[13px] text-primary">dpo@sevenmynd.com</span>
-            </div>
+            <p className="text-[13px] text-foreground/80">Abraham Osemudiameh, trading as Seven Mynd</p>
+            <div className="flex items-center gap-2"><Mail size={13} className="text-muted-foreground" /><a href="mailto:hello@sevenmynd.com" className="text-[13px] text-primary hover:underline">hello@sevenmynd.com</a></div>
+            <div className="flex items-center gap-2"><Lock size={13} className="text-muted-foreground" /><a href="mailto:privacy@sevenmynd.com" className="text-[13px] text-primary hover:underline">privacy@sevenmynd.com</a></div>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
-            UK residents: lodge complaints with the ICO at ico.org.uk
-            <br />
-            EU residents: contact your national data protection authority
-          </p>
+          <div className="mt-3 pt-3 border-t border-border">
+            <p className="text-[12px] text-muted-foreground leading-relaxed">For data protection enquiries, contact <a href="mailto:privacy@sevenmynd.com" className="text-primary hover:underline">privacy@sevenmynd.com</a></p>
+            <p className="text-[12px] text-muted-foreground leading-relaxed mt-1">UK residents: lodge complaints with the ICO at <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">ico.org.uk</a> or call 0303 123 1113</p>
+            <p className="text-[12px] text-muted-foreground leading-relaxed mt-1">EU residents: contact your national data protection authority</p>
+          </div>
         </motion.div>
-
-        <p className="text-[11px] text-muted-foreground text-center mt-6 leading-relaxed">
-          Seven Privacy Policy · Version 1.0 · 10 April 2026
-          <br />
-          Seven Mynd Ltd · sevenmynd.com
-        </p>
+        <p className="text-[11px] text-muted-foreground text-center mt-6 leading-relaxed">Seven Mynd Privacy Policy · Version 1.1 · 14 April 2026<br />Abraham Osemudiameh, trading as Seven Mynd · sevenmynd.com</p>
       </div>
-    </AppLayout>
+    </div>
   );
 };
 
-interface PolicySubsection {
-  subtitle: string;
-  items: string[];
-  note?: string;
-}
-
-const PolicySection = ({
-  index,
-  title,
-  subsections,
-}: {
-  index: number;
-  title: string;
-  subsections: PolicySubsection[];
-}) => (
-  <motion.div
-    initial={{ opacity: 0, y: 12 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: 0.08 + index * 0.03 }}
-    className="bg-card border border-border rounded-2xl p-5"
-  >
-    <h2 className="text-[15px] font-medium text-foreground mb-3">{title}</h2>
-    {subsections.map((sub, i) => (
-      <div key={i} className={i > 0 ? "mt-4" : ""}>
-        {sub.subtitle && (
-          <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            {sub.subtitle}
-          </p>
-        )}
+interface Sub { st: string; it: string[]; n?: string }
+const S = ({ i, t, c, ss }: { i: number; t: string; c?: string[]; ss?: Sub[] }) => (
+  <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 + i * 0.03 }} className="bg-card border border-border rounded-2xl p-5">
+    <h2 className="text-[15px] font-medium text-foreground mb-3">{t}</h2>
+    {c?.map((p, j) => <p key={j} className="text-[13px] text-foreground/80 leading-relaxed mb-2">{p}</p>)}
+    {ss?.map((sub, j) => (
+      <div key={j} className={j > 0 ? "mt-4" : c ? "mt-2" : ""}>
+        {sub.st && <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">{sub.st}</p>}
         <div className="flex flex-col gap-1.5">
-          {sub.items.map((item, j) => (
-            <div key={j} className="flex items-start gap-2">
-              <div className="w-1 h-1 rounded-full bg-muted-foreground mt-2 shrink-0" />
-              <span className="text-[13px] text-foreground/80 leading-relaxed">{item}</span>
-            </div>
-          ))}
+          {sub.it.map((item, k) => (<div key={k} className="flex items-start gap-2"><div className="w-1 h-1 rounded-full bg-muted-foreground mt-2 shrink-0" /><span className="text-[13px] text-foreground/80 leading-relaxed">{item}</span></div>))}
         </div>
-        {sub.note && (
-          <div className="mt-3 bg-primary/5 border border-primary/15 rounded-xl px-3.5 py-2.5">
-            <p className="text-[12px] text-foreground/70 leading-relaxed">{sub.note}</p>
-          </div>
-        )}
+        {sub.n && <div className="mt-3 bg-primary/5 border border-primary/15 rounded-xl px-3.5 py-2.5"><p className="text-[12px] text-foreground/70 leading-relaxed">{sub.n}</p></div>}
       </div>
     ))}
   </motion.div>
