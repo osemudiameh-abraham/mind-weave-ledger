@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, MicOff, Send, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import LiveButton from "./LiveButton";
+import { useDeepgramDictation } from "@/hooks/use-deepgram-dictation";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -27,6 +28,23 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
     setValue("");
   };
 
+  // Deepgram dictation — same pipeline as Live page (Section 10.5)
+  const onInterim = useCallback((text: string) => {
+    setValue(text);
+  }, []);
+
+  const onFinal = useCallback((text: string) => {
+    onSend(text);
+    setValue("");
+    setRecording(false);
+  }, [onSend]);
+
+  useDeepgramDictation({
+    active: recording,
+    onInterim,
+    onFinal,
+  });
+
   return (
     <div className="fixed bottom-[56px] left-0 right-0 z-40 px-3 pb-2 bg-background">
       <div className="max-w-lg mx-auto">
@@ -45,12 +63,12 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
                 handleSend();
               }
             }}
-            placeholder="Talk to Seven"
+            placeholder={recording ? "Listening…" : "Talk to Seven"}
             rows={1}
             className="flex-1 bg-transparent text-foreground text-[15px] placeholder:text-muted-foreground outline-none resize-none py-2 leading-relaxed min-h-[24px]"
           />
 
-          {hasText ? (
+          {hasText && !recording ? (
             <motion.button
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -64,9 +82,9 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
               <button
                 onClick={() => setRecording((r) => !r)}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors shrink-0 mb-0.5 ${
-                  recording ? "bg-destructive/15 text-destructive" : "text-muted-foreground hover:bg-muted"
+                  recording ? "bg-destructive/15 text-destructive animate-pulse" : "text-muted-foreground hover:bg-muted"
                 }`}
-                aria-label={recording ? "Stop recording" : "Start recording"}
+                aria-label={recording ? "Stop recording" : "Start voice input"}
               >
                 {recording ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
