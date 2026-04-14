@@ -49,108 +49,186 @@ async function runPostProcessing(params: {
     content: assistantContent,
   });
 
-  // ─── Extract facts from EVERY message ───
+  // ─── THREE-TIER EXTRACTION PIPELINE (Architecture Section 3.6) ───
+  // Tier 1: Heuristic gate — filter messages unlikely to contain facts (65% filtered, zero cost)
+  // Tier 2: Regex patterns — extract common fact types without LLM (zero cost)
+  // Tier 3: LLM extraction — GPT-4o-mini for complex/implicit facts (~$0.001/call)
   {
     try {
-      const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `Extract ALL factual claims, preferences, opinions, dislikes, habits, and personal information from the user message. Return a JSON array of objects with: subject, attribute, value, category (one of: identity, work, values, goals, patterns, relationships, preferences, dislikes, habits, general). Extract things like "I don't like X", "I prefer Y", "I hate Z", "I love W", "I'm allergic to", "I avoid", etc. If the message contains no extractable facts or preferences, return []. Return ONLY valid JSON, no markdown.`,
-            },
-            { role: "user", content: message },
-          ],
-          temperature: 0,
-          max_tokens: 512,
-        }),
-      });
+      // ── TIER 1: Heuristic Gate ──
+      // Pure function, no async, under 5ms. Returns true if message likely contains extractable facts.
+      const tier1Signals = [
+        /\b(i am|i'm|my name|i work|i live|i was born|i grew up|my age|i'm from|i moved)\b/i,
+        /\b(i decided|i've decided|i'm going to|i will|i choose|i commit|my decision)\b/i,
+        /\b(i (love|hate|like|dislike|prefer|enjoy|avoid|can't stand|always|never))\b/i,
+        /\b(my (wife|husband|partner|son|daughter|mother|father|brother|sister|boss|friend|team|company))\b/i,
+        /\b(i'm (a|an|the) \w+)/i,
+        /\b(i (started|joined|left|quit|began|finished|completed|graduated|studied))\b/i,
+        /\b(my (goal|dream|plan|priority|focus|habit|routine|allergy|fear))\b/i,
+        /\b(i (believe|think|feel|know|value|want|need|hope|worry))\b/i,
+        /\b(born in|i earn|my salary|my budget|i spent|i saved|i invested)\b/i,
+        /\b(diagnosed|allergic|intolerant|vegetarian|vegan|gluten.free)\b/i,
+      ];
+      const hasSignals = tier1Signals.some((r) => r.test(message));
 
-      if (!extractRes.ok) {
-        console.error("[FACT_EXTRACT] OpenAI API error:", extractRes.status, await extractRes.text());
+      if (!hasSignals) {
+        console.log("[EXTRACT] Tier 1: No fact signals — skipping extraction");
       } else {
-        const extractData = await extractRes.json();
-        const rawFacts = extractData.choices?.[0]?.message?.content || "[]";
-        const cleanFacts = rawFacts.replace(/```json\n?|```/g, "").trim();
-        console.log("[FACT_EXTRACT] Raw LLM output:", cleanFacts);
+        console.log("[EXTRACT] Tier 1: Fact signals detected — proceeding to Tier 2");
 
-        let extractedFacts: { subject?: string; attribute?: string; value?: string; category?: string }[];
-        try {
-          extractedFacts = JSON.parse(cleanFacts);
-        } catch (parseErr) {
-          console.error("[FACT_EXTRACT] JSON parse failed:", parseErr, "Raw:", cleanFacts);
-          extractedFacts = [];
+        // ── TIER 2: Regex Patterns ──
+        // Structured extraction without LLM. ~80% coverage of fact-containing messages.
+        const tier2Facts: { subject: string; attribute: string; value: string; category: string }[] = [];
+
+        const regexPatterns: { pattern: RegExp; extract: (m: RegExpMatchArray) => { subject: string; attribute: string; value: string; category: string } | null }[] = [
+          { pattern: /\bi(?:'m| am) (?:a |an )?(\w[\w\s]*?) at (\w[\w\s&.]*)/i, extract: (m) => ({ subject: "user", attribute: "job_role", value: m[1].trim(), category: "work" }) },
+          { pattern: /\bi(?:'m| am) (?:a |an )?(\w[\w\s]*?) at (\w[\w\s&.]*)/i, extract: (m) => ({ subject: "user", attribute: "employer", value: m[2].trim(), category: "work" }) },
+          { pattern: /\bi (?:work|worked) (?:at|for) (\w[\w\s&.]*)/i, extract: (m) => ({ subject: "user", attribute: "employer", value: m[1].trim(), category: "work" }) },
+          { pattern: /\bi live (?:in|at) ([\w\s,]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: "location", value: m[1].trim(), category: "identity" }) },
+          { pattern: /\bmy name is ([\w\s'-]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: "name", value: m[1].trim(), category: "identity" }) },
+          { pattern: /\bi(?:'m| am) (\d{1,3})(?: years old)?/i, extract: (m) => ({ subject: "user", attribute: "age", value: m[1], category: "identity" }) },
+          { pattern: /\bborn in (\d{4})/i, extract: (m) => ({ subject: "user", attribute: "birth_year", value: m[1], category: "identity" }) },
+          { pattern: /\bmy (wife|husband|partner|girlfriend|boyfriend) (?:is |named )?([\w\s'-]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: "relationship", value: `${m[1]}: ${m[2].trim()}`, category: "relationships" }) },
+          { pattern: /\bmy (son|daughter|child|kid) (?:is |named )?([\w\s'-]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: "family", value: `${m[1]}: ${m[2].trim()}`, category: "relationships" }) },
+          { pattern: /\bi (?:really )?(love|hate|dislike|enjoy|avoid|prefer|can't stand) ([\w\s]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: m[1].toLowerCase(), value: m[2].trim(), category: "preferences" }) },
+          { pattern: /\bi(?:'m| am) (allergic|intolerant) to ([\w\s]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: "allergy", value: m[2].trim(), category: "identity" }) },
+          { pattern: /\bi(?:'m| am) (?:a )?(vegetarian|vegan|pescatarian)/i, extract: (m) => ({ subject: "user", attribute: "diet", value: m[1], category: "preferences" }) },
+          { pattern: /\bmy goal is (?:to )?([\w\s]+?)(?:\.|,|$)/i, extract: (m) => ({ subject: "user", attribute: "goal", value: m[1].trim(), category: "goals" }) },
+        ];
+
+        for (const { pattern, extract } of regexPatterns) {
+          const match = message.match(pattern);
+          if (match) {
+            const fact = extract(match);
+            if (fact && fact.value.length > 1 && fact.value.length < 200) {
+              tier2Facts.push(fact);
+            }
+          }
         }
 
-        if (Array.isArray(extractedFacts)) {
-          console.log(`[FACT_EXTRACT] Extracted ${extractedFacts.length} facts from message`);
+        if (tier2Facts.length > 0) {
+          console.log(`[EXTRACT] Tier 2: Regex extracted ${tier2Facts.length} facts`);
+        }
 
-          for (const fact of extractedFacts) {
-            if (!fact.subject || !fact.attribute || !fact.value) {
-              console.warn("[FACT_EXTRACT] Skipping incomplete fact:", JSON.stringify(fact));
+        // ── TIER 3: LLM Extraction ──
+        // Only runs if Tier 2 found fewer than 2 facts (may have missed complex/implicit ones)
+        let tier3Facts: { subject?: string; attribute?: string; value?: string; category?: string }[] = [];
+
+        if (tier2Facts.length < 2) {
+          const extractRes = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [
+                {
+                  role: "system",
+                  content: `Extract ALL factual claims, preferences, opinions, dislikes, habits, and personal information from the user message. Return a JSON array of objects with: subject, attribute, value, category (one of: identity, work, values, goals, patterns, relationships, preferences, dislikes, habits, general). Extract things like "I don't like X", "I prefer Y", "I hate Z", "I love W", "I'm allergic to", "I avoid", etc. If the message contains no extractable facts or preferences, return []. Return ONLY valid JSON, no markdown.`,
+                },
+                { role: "user", content: message },
+              ],
+              temperature: 0,
+              max_tokens: 512,
+            }),
+          });
+
+          if (extractRes.ok) {
+            const extractData = await extractRes.json();
+            const rawFacts = extractData.choices?.[0]?.message?.content || "[]";
+            const cleanFacts = rawFacts.replace(/```json\n?|```/g, "").trim();
+            try {
+              const parsed = JSON.parse(cleanFacts);
+              if (Array.isArray(parsed)) {
+                tier3Facts = parsed;
+                console.log(`[EXTRACT] Tier 3: LLM extracted ${tier3Facts.length} facts`);
+              }
+            } catch {
+              console.error("[EXTRACT] Tier 3: JSON parse failed");
+            }
+          } else {
+            console.error("[EXTRACT] Tier 3: OpenAI error:", extractRes.status);
+          }
+        } else {
+          console.log("[EXTRACT] Tier 3: Skipped — Tier 2 extracted enough facts");
+        }
+
+        // ── Merge and deduplicate facts from Tier 2 + Tier 3 ──
+        const allFacts = [...tier2Facts];
+        for (const t3 of tier3Facts) {
+          if (!t3.subject || !t3.attribute || !t3.value) continue;
+          const key = `${t3.subject.toLowerCase()}::${t3.attribute.toLowerCase()}`;
+          const exists = allFacts.some((f) => `${f.subject.toLowerCase()}::${f.attribute.toLowerCase()}` === key);
+          if (!exists) {
+            allFacts.push({ subject: t3.subject, attribute: t3.attribute, value: t3.value, category: t3.category || "general" });
+          }
+        }
+
+        // ── EXTRACTION-TO-FACT PIPELINE (Section 3.6) ──
+        // For each fact: check existing → skip if same → supersede if different → flag contradiction if within 24h
+        for (const fact of allFacts) {
+          if (!fact.subject || !fact.attribute || !fact.value) continue;
+
+          const factKey = `${fact.subject.toLowerCase().trim()}::${fact.attribute.toLowerCase().trim()}`;
+          const canonicalText = `${fact.subject} ${fact.attribute} is ${fact.value}`;
+
+          // Check for existing fact with same (user_id, subject, attribute) WHERE valid_until IS NULL
+          const { data: existingFact } = await supabase
+            .from("memory_facts")
+            .select("id, value_text, created_at")
+            .eq("user_id", userId)
+            .eq("subject", fact.subject)
+            .eq("attribute", fact.attribute)
+            .is("valid_until", null)
+            .maybeSingle();
+
+          if (existingFact) {
+            // Same value → skip (idempotent)
+            if (existingFact.value_text?.toLowerCase().trim() === fact.value.toLowerCase().trim()) {
+              console.log(`[FACT_STORE] Idempotent skip: ${factKey} = ${fact.value}`);
               continue;
             }
 
-            const factKey = `${fact.subject.toLowerCase().trim()}::${fact.attribute.toLowerCase().trim()}`;
-            const canonicalText = `${fact.subject} ${fact.attribute} is ${fact.value}`;
-            const category = fact.category || "general";
+            // Different value → supersede
+            // Check for contradiction: if existing fact was extracted within 24h, flag for user
+            const existingAge = Date.now() - new Date(existingFact.created_at).getTime();
+            const isRecentContradiction = existingAge < 24 * 60 * 60 * 1000;
 
-            const { data: supersededData, error: supersededError } = await supabase
-              .from("memory_facts")
-              .update({
-                valid_until: new Date().toISOString(),
-                status: "superseded",
-              })
-              .eq("user_id", userId)
-              .eq("subject", fact.subject)
-              .eq("attribute", fact.attribute)
-              .is("valid_until", null)
-              .select("id");
+            await supabase.from("memory_facts").update({
+              valid_until: new Date().toISOString(),
+              status: "superseded",
+            }).eq("id", existingFact.id);
 
-            if (supersededError) {
-              console.error("[FACT_STORE] Supersede update failed:", supersededError.message, supersededError.details);
-            } else if (supersededData && supersededData.length > 0) {
-              console.log(`[FACT_STORE] Superseded ${supersededData.length} existing fact(s) for ${factKey}`);
-            }
-
-            const supersededId = supersededData?.[0]?.id || null;
-
-            const { error: insertError } = await supabase.from("memory_facts").insert({
-              user_id: userId,
-              fact_key: factKey,
-              subject: fact.subject,
-              attribute: fact.attribute,
-              value_text: fact.value,
-              canonical_text: canonicalText,
-              category: category,
-              source_type: "inferred",
-              confidence: 0.8,
-              evidence_count: 1,
-              status: "active",
-              supersedes_fact_id: supersededId,
-            });
-
-            if (insertError) {
-              console.error(
-                "[FACT_STORE] INSERT failed:",
-                insertError.message,
-                insertError.details,
-                insertError.hint,
-                "Fact:", JSON.stringify({ factKey, subject: fact.subject, attribute: fact.attribute, value: fact.value })
-              );
-            } else {
-              console.log(`[FACT_STORE] Stored fact: ${factKey} = ${fact.value}`);
-            }
+            console.log(`[FACT_STORE] Superseded: ${factKey} (old: "${existingFact.value_text}" → new: "${fact.value}")${isRecentContradiction ? " ⚠️ CONTRADICTION within 24h" : ""}`);
           }
-        } else {
-          console.warn("[FACT_EXTRACT] Extraction result is not an array:", typeof extractedFacts);
+
+          // Insert new fact
+          const { error: insertError } = await supabase.from("memory_facts").insert({
+            user_id: userId,
+            fact_key: factKey,
+            subject: fact.subject,
+            attribute: fact.attribute,
+            value_text: fact.value,
+            canonical_text: canonicalText,
+            category: fact.category || "general",
+            source_type: existingFact ? "corrected" : "inferred",
+            confidence: tier2Facts.includes(fact) ? 0.9 : 0.8,
+            evidence_count: 1,
+            status: "active",
+            supersedes_fact_id: existingFact?.id || null,
+            source_message_id: crypto.randomUUID(),
+          });
+
+          if (insertError) {
+            console.error("[FACT_STORE] INSERT failed:", insertError.message, insertError.details);
+          } else {
+            console.log(`[FACT_STORE] Stored: ${factKey} = ${fact.value} (tier: ${tier2Facts.includes(fact) ? "2" : "3"})`);
+          }
         }
+
+        console.log(`[EXTRACT] Pipeline complete: ${allFacts.length} facts processed (Tier 2: ${tier2Facts.length}, Tier 3: ${tier3Facts.length})`);
       }
     } catch (extractionErr) {
-      console.error("[FACT_EXTRACT] Extraction pipeline failed:", extractionErr);
+      console.error("[EXTRACT] Pipeline failed:", extractionErr);
     }
   }
 

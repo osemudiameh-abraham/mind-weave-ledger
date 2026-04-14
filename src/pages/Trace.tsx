@@ -7,9 +7,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface TraceEntry {
   id: string;
-  query_text: string;
-  assistant_text: string;
-  strategy_history: { sources?: string[]; facts_loaded?: number; decisions_loaded?: number; patterns_loaded?: number; recent_memories?: number; semantic_matches?: number } | null;
+  action_description: string;
+  reasoning: string | null;
+  sources: string[] | null;
+  memory_ids: string[] | null;
+  fact_ids: string[] | null;
+  decision_ids: string[] | null;
+  situation_ids: string[] | null;
   created_at: string;
 }
 
@@ -25,7 +29,7 @@ const Trace = () => {
       setLoading(true);
       const { data } = await supabase
         .from("memory_traces")
-        .select("id, query_text, assistant_text, strategy_history, created_at")
+        .select("id, action_description, reasoning, sources, memory_ids, fact_ids, decision_ids, situation_ids, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(30);
@@ -48,20 +52,12 @@ const Trace = () => {
   return (
     <AppLayout>
       <div className="pt-16 pb-24 px-4 max-w-3xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <div className="flex items-center gap-2 mb-1">
             <ShieldCheck size={18} className="text-primary" />
-            <h1 className="text-[22px] font-medium text-foreground tracking-tight">
-              Governance Trace
-            </h1>
+            <h1 className="text-[22px] font-medium text-foreground tracking-tight">Governance Trace</h1>
           </div>
-          <p className="text-[14px] text-muted-foreground mt-1">
-            Why Seven said what it said. Full transparency.
-          </p>
+          <p className="text-[14px] text-muted-foreground mt-1">Why Seven said what it said. Full transparency.</p>
         </motion.div>
 
         {loading ? (
@@ -88,11 +84,9 @@ const Trace = () => {
                 >
                   <div className="flex-1 mr-3">
                     <p className="text-[14px] font-medium text-foreground leading-snug">
-                      {trace.query_text}
+                      {trace.action_description}
                     </p>
-                    <span className="text-[11px] text-muted-foreground mt-1 block">
-                      {timeAgo(trace.created_at)}
-                    </span>
+                    <span className="text-[11px] text-muted-foreground mt-1 block">{timeAgo(trace.created_at)}</span>
                   </div>
                   {expanded === trace.id ? (
                     <ChevronUp size={16} className="text-muted-foreground mt-1" />
@@ -107,23 +101,39 @@ const Trace = () => {
                     animate={{ height: "auto", opacity: 1 }}
                     className="px-4 pb-4 border-t border-border"
                   >
-                    {trace.assistant_text && (
-                      <p className="text-[13px] text-muted-foreground leading-relaxed mt-3 mb-3">
-                        {trace.assistant_text.slice(0, 300)}{trace.assistant_text.length > 300 ? "…" : ""}
-                      </p>
+                    {trace.reasoning && (
+                      <p className="text-[13px] text-muted-foreground leading-relaxed mt-3 mb-3">{trace.reasoning}</p>
                     )}
-                    {trace.strategy_history?.sources && trace.strategy_history.sources.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {trace.strategy_history.sources.map((src: string, j: number) => (
-                          <span
-                            key={j}
-                            className="px-2.5 py-1 rounded-full bg-muted text-[11px] text-muted-foreground"
-                          >
-                            {src}
-                          </span>
-                        ))}
+
+                    {/* Context sources used */}
+                    {trace.sources && trace.sources.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-[11px] font-medium text-muted-foreground mb-1.5">SOURCES USED</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {trace.sources.map((src, j) => (
+                            <span key={j} className="px-2.5 py-1 rounded-full bg-muted text-[11px] text-muted-foreground">
+                              {src.replace(/_/g, " ")}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
+
+                    {/* Context IDs summary */}
+                    <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                      {trace.fact_ids && trace.fact_ids.length > 0 && (
+                        <span>{trace.fact_ids.length} facts loaded</span>
+                      )}
+                      {trace.decision_ids && trace.decision_ids.length > 0 && (
+                        <span>{trace.decision_ids.length} decisions referenced</span>
+                      )}
+                      {trace.memory_ids && trace.memory_ids.length > 0 && (
+                        <span>{trace.memory_ids.length} memories matched</span>
+                      )}
+                      {trace.situation_ids && trace.situation_ids.length > 0 && (
+                        <span>{trace.situation_ids.length} patterns triggered</span>
+                      )}
+                    </div>
                   </motion.div>
                 )}
               </motion.div>
