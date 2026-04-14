@@ -37,9 +37,10 @@ async function runPostProcessing(params: {
   recentMems: { text: string }[];
   semanticMems: { text: string }[];
   matchedPatternIds: string[];
+  situations: { id: string; title: string }[];
   metadata: { source?: string } | null;
 }) {
-  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds, metadata } = params;
+  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds, situations, metadata } = params;
 
   // Store assistant response
   await supabase.from("messages").insert({
@@ -349,6 +350,115 @@ async function runPostProcessing(params: {
     }
   }
 
+  // ─── Situation detection (Architecture Section 6.2) ───
+  // Detect complex ongoing scenarios and create/update situations.
+  const situationSignals = /\b(situation|project|deal|partnership|negotiation|dispute|lawsuit|buying|selling|hiring|firing|moving|renovation|startup|launch|campaign|initiative)\b/i;
+  const complexitySignals = message.length > 100 && (message.split(",").length > 2 || message.split(" and ").length > 2);
+  
+  if (situationSignals.test(message) && complexitySignals) {
+    try {
+      const sitExtract = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Detect if this message describes a complex ongoing situation worth tracking. Return JSON: { "is_situation": true/false, "title": "short title", "narrative": "1-2 sentence summary", "entities": [{"name": "...", "type": "person|organisation"}], "risks": ["risk1", "risk2"] }. Return only valid JSON, no markdown.`,
+            },
+            { role: "user", content: message },
+          ],
+          temperature: 0,
+          max_tokens: 400,
+        }),
+      });
+
+      if (sitExtract.ok) {
+        const sitData = await sitExtract.json();
+        const raw = sitData.choices?.[0]?.message?.content || "{}";
+        const clean = raw.replace(/```json\n?|```/g, "").trim();
+        const sitResult = JSON.parse(clean);
+
+        if (sitResult?.is_situation && sitResult?.title) {
+          // Check if a situation with similar title already exists
+          const { data: existingSit } = await supabase
+            .from("situations")
+            .select("id, title")
+            .eq("user_id", userId)
+            .eq("status", "active")
+            .ilike("title", `%${sitResult.title.split(" ").slice(0, 3).join("%")}%`)
+            .maybeSingle();
+
+          if (existingSit) {
+            // Update existing situation with new info
+            await supabase.from("situations").update({
+              narrative: sitResult.narrative || undefined,
+              entities: sitResult.entities || undefined,
+              risks: sitResult.risks || undefined,
+              updated_at: new Date().toISOString(),
+            }).eq("id", existingSit.id);
+            console.log(`[SITUATION] Updated: "${existingSit.title}"`);
+          } else {
+            // Create new situation
+            const { error: sitErr } = await supabase.from("situations").insert({
+              user_id: userId,
+              title: sitResult.title,
+              narrative: sitResult.narrative || message.slice(0, 500),
+              status: "active",
+              entities: sitResult.entities || [],
+              risks: sitResult.risks || [],
+            });
+            if (!sitErr) {
+              console.log(`[SITUATION] Created: "${sitResult.title}"`);
+            } else {
+              console.error("[SITUATION] Create failed:", sitErr.message);
+            }
+          }
+        }
+      }
+    } catch (sitErr) {
+      console.error("[SITUATION] Detection failed:", sitErr);
+    }
+  }
+
+  // Detect situation resolution
+  const resolveSignals = /\b(resolved|concluded|settled|sorted|wrapped up|closed the deal|finished|done with|behind me now)\b/i;
+  if (resolveSignals.test(message) && situations.length > 0) {
+    try {
+      const resolveExtract = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `The user may be indicating a situation is resolved. Active situations: ${situations.map((s) => `"${s.title}"`).join(", ")}. If the message indicates one is resolved, return JSON: { "resolved_title": "matching title" }. If none match, return null. Return only valid JSON.`,
+            },
+            { role: "user", content: message },
+          ],
+          temperature: 0,
+          max_tokens: 100,
+        }),
+      });
+
+      if (resolveExtract.ok) {
+        const rData = await resolveExtract.json();
+        const rRaw = rData.choices?.[0]?.message?.content || "null";
+        const rClean = rRaw.replace(/```json\n?|```/g, "").trim();
+        const rResult = JSON.parse(rClean);
+        if (rResult?.resolved_title) {
+          const matched = situations.find((s) => s.title.toLowerCase().includes(rResult.resolved_title.toLowerCase().slice(0, 20)));
+          if (matched) {
+            await supabase.from("situations").update({ status: "resolved", updated_at: new Date().toISOString() }).eq("id", matched.id);
+            console.log(`[SITUATION] Resolved: "${matched.title}"`);
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
   // ─── Governance trace ───
   const { error: traceError } = await supabase.from("memory_traces").insert({
     user_id: userId,
@@ -440,7 +550,7 @@ serve(async (req) => {
     const embeddingPromise = embed(message, openaiKey);
 
     // ─── Fetch context layers in parallel ───
-    const [factsRes, decisionsRes, patternsRes, identityRes, recentMemsRes, historyRes, identityModelRes] = await Promise.all([
+    const [factsRes, decisionsRes, patternsRes, identityRes, recentMemsRes, historyRes, identityModelRes, situationsRes] = await Promise.all([
       supabase
         .from("memory_facts")
         .select("subject, attribute, value_text, category, confidence")
@@ -487,6 +597,14 @@ serve(async (req) => {
         .select("personality_dimensions, core_values, decision_tendencies, communication_style, strengths, blind_spots")
         .eq("user_id", user.id)
         .maybeSingle(),
+      // Active situations — narrative intelligence (Section 6.2)
+      supabase
+        .from("situations")
+        .select("id, title, narrative, status, entities, risks")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(5),
     ]);
 
     const facts = factsRes.data || [];
@@ -496,6 +614,7 @@ serve(async (req) => {
     const recentMems = recentMemsRes.data || [];
     const history = historyRes.data || [];
     const identityModel = identityModelRes.data;
+    const situations = situationsRes.data || [];
 
     if (factsRes.error) console.error("[CONTEXT] Facts query failed:", factsRes.error.message);
     if (decisionsRes.error) console.error("[CONTEXT] Decisions query failed:", decisionsRes.error.message);
@@ -713,6 +832,17 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
     if (recentMems.length > 0) {
       const memLines = recentMems.map((m) => `- ${m.text}`);
       systemPrompt += `\n\n## RECENT THINGS THEY'VE TOLD YOU\n${memLines.join("\n")}`;
+    }
+
+    // Active situations — narrative intelligence (Section 6.2)
+    if (situations.length > 0) {
+      const sitLines = situations.map((s) => {
+        let line = `• "${s.title}" (${s.status})`;
+        if (s.narrative) line += ` — ${s.narrative.slice(0, 200)}`;
+        if (s.risks && Array.isArray(s.risks) && s.risks.length > 0) line += ` | Risks: ${s.risks.join(", ")}`;
+        return line;
+      });
+      systemPrompt += `\n\n## ACTIVE SITUATIONS THEY'RE NAVIGATING\nThese are complex, ongoing situations. Reference them when relevant:\n${sitLines.join("\n")}`;
     }
 
     // Voice-optimised system prompt (Section 4.8)
@@ -1115,6 +1245,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
               recentMems,
               semanticMems,
               matchedPatternIds,
+              situations,
               metadata: metadata || null,
             });
 
@@ -1128,6 +1259,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
                 patterns: patterns.length,
                 memories: recentMems.length,
                 semantic_matches: semanticMems.length,
+                situations: situations.length,
               },
             })}\n\n`));
           } catch (streamErr) {
@@ -1182,6 +1314,7 @@ ${userName ? `- This person's name is ${userName}. Use it naturally — not in e
       recentMems,
       semanticMems,
       matchedPatternIds,
+      situations,
       metadata: metadata || null,
     });
 
