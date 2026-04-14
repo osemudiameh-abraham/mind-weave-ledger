@@ -34,10 +34,11 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   }, []);
 
   const onFinal = useCallback((text: string) => {
-    onSend(text);
-    setValue("");
+    // Don't auto-send — leave text in textarea for user to review and tap Send.
+    // This matches Google voice typing UX.
+    setValue(text);
     setRecording(false);
-  }, [onSend]);
+  }, []);
 
   useDeepgramDictation({
     active: recording,
@@ -46,7 +47,7 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   });
 
   return (
-    <div className="fixed bottom-[56px] left-0 right-0 z-40 px-3 pb-2 bg-background">
+    <div className="fixed left-0 right-0 z-40 px-3 pb-2 bg-background" style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))" }}>
       <div className="max-w-lg mx-auto">
         <div className="bg-card rounded-[28px] border border-border/50 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] flex items-end gap-1 px-2 py-1.5">
           <button className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5">

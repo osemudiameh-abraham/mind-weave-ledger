@@ -21,7 +21,7 @@ const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDism
   const isSubPage = !mainPages.includes(location.pathname);
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-background">
+    <div className="fixed top-0 left-0 right-0 z-50 bg-background" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <div className="flex items-center justify-between px-4 h-14">
         {isSubPage ? (
           <button
