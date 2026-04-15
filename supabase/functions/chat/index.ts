@@ -1,10 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://sevenmynd.com",
+  "https://www.sevenmynd.com",
+  "https://mind-weave-ledger.lovable.app",
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get("origin") || "";
+  if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app")) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
 
 // ─── Generate embedding via OpenAI ───
 async function embed(text: string, apiKey: string): Promise<number[] | null> {
@@ -476,6 +485,11 @@ async function runPostProcessing(params: {
 }
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -500,6 +514,16 @@ serve(async (req) => {
     const { message, section_id, response_mode, metadata, visual_context } = await req.json();
     if (!message) {
       return new Response(JSON.stringify({ error: "No message" }), { status: 400, headers: corsHeaders });
+    }
+
+    // ─── Message length limit (Security hardening) ───
+    // Prevents cost abuse: a 50K-char message costs ~$0.50 in tokens.
+    // 60 of those per hour (within rate limit) = $30/hour per user.
+    if (typeof message !== "string" || message.length > 10000) {
+      return new Response(
+        JSON.stringify({ error: "Message too long. Maximum 10,000 characters." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
