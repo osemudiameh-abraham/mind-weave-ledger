@@ -14,12 +14,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://sevenmynd.com",
+  "https://www.sevenmynd.com",
+  "https://mind-weave-ledger.lovable.app",
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get("origin") || "";
+  if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app")) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

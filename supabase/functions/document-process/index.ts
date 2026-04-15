@@ -20,20 +20,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://sevenmynd.com",
+  "https://www.sevenmynd.com",
+  "https://mind-weave-ledger.lovable.app",
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get("origin") || "";
+  if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app")) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
 
 // Simple text chunker (512 tokens ≈ ~2000 chars, 50 token overlap ≈ ~200 chars)
 function chunkText(text: string, chunkSize = 2000, overlap = 200): string[] {
   const chunks: string[] = [];
   let start = 0;
   while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    chunks.push(text.slice(start, end));
-    if (end >= text.length) break;
-    start = end - overlap;
+    chunks.push(text.slice(start, start + chunkSize));
+    start += chunkSize - overlap;
   }
   return chunks;
 }
@@ -54,6 +61,11 @@ async function embed(text: string, apiKey: string): Promise<number[] | null> {
 }
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

@@ -5,34 +5,77 @@
  * Accepts notification params, looks up user's push subscriptions,
  * sends via Web Push protocol. Logs to notification_log.
  *
+ * SECURITY: Two access paths — both validated:
+ *   1. Internal (cron): requires valid CRON_SECRET header → can target any user
+ *   2. External (user): requires valid Supabase JWT → can only target self
+ *
  * Requires VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY env vars.
  * If not configured, notifications are logged but not pushed.
- *
- * Called by cron-notifications or directly for immediate notifications.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://sevenmynd.com",
+  "https://www.sevenmynd.com",
+  "https://mind-weave-ledger.lovable.app",
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get("origin") || "";
+  if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app")) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // This function can be called internally (from cron) or with user auth
-    const authHeader = req.headers.get("Authorization");
+    // ─── Determine caller identity (SECURITY FIX) ───
     const cronSecret = req.headers.get("x-cron-secret");
-    const isInternalCall = cronSecret === Deno.env.get("CRON_SECRET");
+    const isInternalCall = cronSecret !== null && cronSecret === Deno.env.get("CRON_SECRET");
 
+    let callerUserId: string | null = null;
+
+    if (!isInternalCall) {
+      // External call — validate Supabase JWT to identify caller
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "No auth" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const authSupabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+
+      const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      callerUserId = user.id;
+    }
+
+    // ─── Service role client for cross-RLS operations ───
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!serviceRoleKey) {
-      console.error("[CRON] SUPABASE_SERVICE_ROLE_KEY not set — cannot process users");
+      console.error("[NOTIFY] SUPABASE_SERVICE_ROLE_KEY not set");
       return new Response(JSON.stringify({ error: "SERVICE_ROLE_KEY not configured" }), {
         status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -49,6 +92,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── SECURITY: External callers can only notify themselves ───
+    if (!isInternalCall && callerUserId !== user_id) {
+      console.warn(`[NOTIFY] BLOCKED: user ${callerUserId?.slice(0, 8)} tried to notify ${user_id.slice(0, 8)}`);
+      return new Response(JSON.stringify({ error: "Cannot send notifications to other users" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -113,9 +164,6 @@ serve(async (req) => {
     let pushSuccess = 0;
     for (const sub of subscriptions) {
       try {
-        // Use the Web Push protocol via simple fetch to the push endpoint
-        // The actual encryption would require ECDH + AES-GCM per RFC 8291
-        // For now, we send with VAPID authorization header (works for basic push)
         const vapidJwt = await createVapidJwt(sub.endpoint, vapidPublicKey, vapidPrivateKey);
 
         const pushRes = await fetch(sub.endpoint, {
@@ -190,7 +238,6 @@ async function createVapidJwt(endpoint: string, publicKey: string, privateKey: s
   const payloadB64 = btoa(JSON.stringify(payload)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
   const signingInput = `${headerB64}.${payloadB64}`;
 
-  // Import the VAPID private key for signing
   const keyData = urlBase64ToUint8Array(privateKey);
   const cryptoKey = await crypto.subtle.importKey(
     "pkcs8",
