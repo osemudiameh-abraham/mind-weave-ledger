@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import TypewriterBubble from "@/components/TypewriterBubble";
 import useTypewriter from "@/hooks/use-typewriter";
@@ -15,7 +15,7 @@ import { useTrialStatus } from "@/hooks/use-trial-status";
 import TrialOfferDialog from "@/components/TrialOfferDialog";
 import { useChat } from "@/hooks/use-chat";
 import { supabase } from "@/lib/supabase";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowDown } from "lucide-react";
 import { unlockMobileAudio } from "@/services/live/RealLiveService";
 
 const suggestions = [
@@ -48,11 +48,52 @@ const Home = () => {
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
   const { messages, loading: chatLoading, sendMessage, loadSection, newSection } = useChat();
 
-  // Auto-scroll to latest message
+  // ─── Smart auto-scroll (Architecture Section 10.5) ───
+  // Auto-scroll to latest message. Disable when user manually scrolls up.
+  // Show floating "scroll to bottom" button when auto-scroll is disabled.
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const userScrolledRef = useRef(false);
+
+  // Track scroll position — disable auto-scroll when user scrolls up >100px from bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const handleScroll = () => {
+      const scrollBottom = document.documentElement.scrollHeight
+        - document.documentElement.scrollTop
+        - document.documentElement.clientHeight;
+
+      if (scrollBottom > 100) {
+        // User has scrolled up
+        userScrolledRef.current = true;
+        setAutoScroll(false);
+        setShowScrollButton(true);
+      } else {
+        // User is at the bottom
+        userScrolledRef.current = false;
+        setAutoScroll(true);
+        setShowScrollButton(false);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Auto-scroll when new messages arrive (only if auto-scroll is enabled)
+  useEffect(() => {
+    if (autoScroll && !userScrolledRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, chatLoading, autoScroll]);
+
+  // Scroll to bottom handler for the floating button
+  const scrollToBottom = useCallback(() => {
+    userScrolledRef.current = false;
+    setAutoScroll(true);
+    setShowScrollButton(false);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
 
   // Load section from URL param (e.g. /home?section=uuid from Library)
   useEffect(() => {
@@ -280,6 +321,24 @@ const Home = () => {
           </div>
         )}
       </div>
+
+      {/* Floating scroll-to-bottom button (Architecture Section 10.5) */}
+      <AnimatePresence>
+        {showScrollButton && messages.length > 0 && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.15 }}
+            onClick={scrollToBottom}
+            className="fixed z-50 right-4 w-10 h-10 rounded-full bg-card border border-border shadow-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px) + 72px)" }}
+            aria-label="Scroll to latest message"
+          >
+            <ArrowDown size={18} />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       <ChatInput onSend={handleSend} onLive={() => {
         unlockMobileAudio();

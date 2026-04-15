@@ -908,6 +908,8 @@ function isEcho(transcript: string, lastSpoken: string): boolean {
   // If the user said 4+ words that aren't in the TTS output, it's real speech
   if (uniqueWords >= 4) return false;
 
-  // Require 65% overlap to classify as echo (was 40% — too aggressive for mobile)
-  return overlapRatio >= 0.65;
+  // Architecture Section 4.6: 25% word overlap threshold.
+  // At 65% only near-complete echoes were caught — partial echoes (a few TTS
+  // words leaking into the mic) slipped through and triggered false responses.
+  return overlapRatio >= 0.25;
 }
