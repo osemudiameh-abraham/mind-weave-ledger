@@ -277,7 +277,7 @@ export class RealLiveService implements LiveService {
   // After TTS ends, brief cooldown to catch residual echo tail.
   // 200ms — just enough for echo, not enough to lose real speech on mobile.
   private ttsCooldownUntil = 0;
-  private static TTS_COOLDOWN_MS = 200;
+  private static TTS_COOLDOWN_MS = 500;
   private lastSpokenText = "";
 
   // Streaming LLM abort controller (for barge-in cancellation)
