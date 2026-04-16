@@ -1,10 +1,12 @@
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, useRef } from "react";
-import { Brain, Briefcase, Heart, Target, User, Loader2, Pencil, Trash2, Check, X } from "lucide-react";
+import { motion } from "framer-motion";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Brain, Briefcase, Heart, Target, User, Pencil, Trash2, Check, X } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { PageError } from "@/components/PageError";
+import { VaultSkeleton } from "@/components/PageSkeletons";
 
 const VAULT_EDIT_LIMIT = 30; // Max edits per hour
 
@@ -32,6 +34,7 @@ const Vault = () => {
   const [active, setActive] = useState("all");
   const [facts, setFacts] = useState<Fact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const editCountRef = useRef<{ count: number; resetAt: number }>({ count: 0, resetAt: Date.now() + 3600000 });
@@ -49,24 +52,30 @@ const Vault = () => {
     return true;
   };
 
-  useEffect(() => {
-    if (!user) return;
-    loadFacts();
-  }, [user]);
-
-  const loadFacts = async () => {
+  const loadFacts = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data } = await supabase
+    setLoadError(null);
+    const { data, error } = await supabase
       .from("memory_facts")
       .select("id, subject, attribute, value_text, category, source_type, created_at")
       .eq("user_id", user.id)
       .eq("status", "active")
       .is("valid_until", null)
       .order("created_at", { ascending: false });
+    if (error) {
+      setLoadError(error);
+      setLoading(false);
+      return;
+    }
     if (data) setFacts(data);
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadFacts();
+  }, [user, loadFacts]);
 
   const startEdit = (fact: Fact) => {
     setEditingId(fact.id);
@@ -138,9 +147,36 @@ const Vault = () => {
 
   const sourceLabel = (s: string) => s === "explicit" ? "Stated directly" : s === "corrected" ? "Corrected by you" : "Inferred";
 
+  if (loading) {
+    return (
+      <AppLayout>
+        <VaultSkeleton />
+      </AppLayout>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <AppLayout>
+        <PageError
+          title="Unable to load vault"
+          message="We couldn't load your memory vault right now. Please try again."
+          onRetry={loadFacts}
+          error={loadError}
+        />
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-lg mx-auto">
+      <div
+        className="px-4 max-w-[780px] mx-auto"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 6rem)",
+        }}
+      >
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-5">
           <h1 className="text-[22px] font-medium text-foreground tracking-tight">Memory Vault</h1>
           <p className="text-[14px] text-muted-foreground mt-1">Everything Seven knows about you</p>
@@ -150,26 +186,26 @@ const Vault = () => {
           {categories.map((cat) => (
             <button
               key={cat.key}
+              type="button"
               onClick={() => setActive(cat.key)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
+              aria-pressed={active === cat.key}
+              className={`flex items-center gap-1.5 min-h-[44px] px-4 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
                 active === cat.key
                   ? "bg-primary text-primary-foreground"
                   : "bg-card border border-border text-foreground"
               }`}
             >
-              {cat.icon && <cat.icon size={14} />}
+              {cat.icon && <cat.icon size={14} aria-hidden="true" />}
               {cat.label}
             </button>
           ))}
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="animate-spin text-primary" size={24} />
-          </div>
-        ) : filtered.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-[14px] text-muted-foreground">No facts yet. Start chatting and Seven will learn about you.</p>
+            <p className="text-[14px] text-muted-foreground max-w-[420px] mx-auto leading-relaxed">
+              Your memory vault is empty. Start chatting with Seven and it will remember what matters.
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -189,12 +225,27 @@ const Vault = () => {
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && saveEdit(fact)}
+                      aria-label="Edit fact value"
                       className="bg-muted border border-border rounded-lg px-3 py-2 text-[14px] text-foreground outline-none focus:ring-1 focus:ring-primary"
                       autoFocus
                     />
                     <div className="flex gap-2 justify-end">
-                      <button onClick={cancelEdit} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"><X size={16} /></button>
-                      <button onClick={() => saveEdit(fact)} className="p-1.5 rounded-lg hover:bg-primary/10 text-primary"><Check size={16} /></button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        aria-label="Cancel edit"
+                        className="w-11 h-11 rounded-lg hover:bg-muted text-muted-foreground flex items-center justify-center"
+                      >
+                        <X size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(fact)}
+                        aria-label="Save edit"
+                        className="w-11 h-11 rounded-lg hover:bg-primary/10 text-primary flex items-center justify-center"
+                      >
+                        <Check size={16} aria-hidden="true" />
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -211,18 +262,20 @@ const Vault = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <button
+                          type="button"
                           onClick={() => startEdit(fact)}
-                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+                          className="w-11 h-11 rounded-lg hover:bg-muted text-muted-foreground transition-colors flex items-center justify-center"
                           aria-label="Edit fact"
                         >
-                          <Pencil size={14} />
+                          <Pencil size={14} aria-hidden="true" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => deleteFact(fact.id)}
-                          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                          className="w-11 h-11 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors flex items-center justify-center"
                           aria-label="Delete fact"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={14} aria-hidden="true" />
                         </button>
                       </div>
                     </div>

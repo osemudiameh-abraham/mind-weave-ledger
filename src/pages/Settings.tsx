@@ -16,7 +16,6 @@ import {
   Check,
   Sun,
   Monitor,
-  Download,
   Loader2,
   AlertTriangle,
   Mic,
@@ -49,7 +48,14 @@ const Settings = () => {
   const navigate = useNavigate();
   const auth = useAuth();
   const { user } = auth;
-  const { enabled: alwaysListeningEnabled, setEnabled: setAlwaysListeningEnabled, wakeWord } = useAlwaysListening();
+  const {
+    enabled: alwaysListeningEnabled,
+    setEnabled: setAlwaysListeningEnabled,
+    wakeWord,
+    isListening: alwaysListeningActive,
+    error: alwaysListeningError,
+    usingFallback: alwaysListeningFallback,
+  } = useAlwaysListening();
 
   // Preferences state — initialised from localStorage cache, then overwritten by Supabase
   const [pushEnabled, setPushEnabled] = useState(() => {
@@ -79,6 +85,14 @@ const Settings = () => {
   // Sign out dialog
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false);
 
+  // ─── Apply theme to document ───
+  const applyTheme = useCallback((mode: ThemeMode) => {
+    document.documentElement.classList.remove("light", "dark");
+    if (mode !== "system") {
+      document.documentElement.classList.add(mode);
+    }
+  }, []);
+
   // ─── Load preferences from Supabase on mount ───
   useEffect(() => {
     if (!user) return;
@@ -88,7 +102,7 @@ const Settings = () => {
       const [prefsRes, gmailRes] = await Promise.all([
         supabase
           .from("user_preferences")
-          .select("push_enabled, email_reminders, theme")
+          .select("push_enabled, email_reminders, theme, always_listening_enabled")
           .eq("user_id", user.id)
           .maybeSingle(),
         supabase
@@ -102,7 +116,12 @@ const Settings = () => {
       if (cancelled) return;
 
       if (prefsRes.data) {
-        const p = prefsRes.data;
+        const p = prefsRes.data as {
+          push_enabled: boolean | null;
+          email_reminders: boolean | null;
+          theme: string | null;
+          always_listening_enabled: boolean | null;
+        };
         setPushEnabled(p.push_enabled ?? false);
         setEmailEnabled(p.email_reminders ?? true);
         const dbTheme = (p.theme as ThemeMode) || "system";
@@ -112,6 +131,13 @@ const Settings = () => {
         localStorage.setItem("seven_email_notifs", String(p.email_reminders ?? true));
         localStorage.setItem("seven_theme", dbTheme);
         applyTheme(dbTheme);
+
+        // Reconcile always_listening preference from DB -> context.
+        // Context was initialised from localStorage; if DB disagrees, DB wins.
+        const dbAlways = p.always_listening_enabled ?? false;
+        if (dbAlways !== alwaysListeningEnabled) {
+          setAlwaysListeningEnabled(dbAlways);
+        }
       }
 
       setGmailConnected(!!gmailRes.data);
@@ -119,15 +145,8 @@ const Settings = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [user]);
-
-  // ─── Apply theme to document ───
-  const applyTheme = useCallback((mode: ThemeMode) => {
-    document.documentElement.classList.remove("light", "dark");
-    if (mode !== "system") {
-      document.documentElement.classList.add(mode);
-    }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, applyTheme]);
 
   // ─── Update a single preference in Supabase ───
   const updatePref = useCallback(async (field: string, value: boolean | string) => {
@@ -155,6 +174,18 @@ const Settings = () => {
     localStorage.setItem("seven_email_notifs", String(next));
     updatePref("email_reminders", next);
     toast(next ? "Email notifications enabled" : "Email notifications disabled");
+  };
+
+  const handleToggleAlwaysListening = () => {
+    const next = !alwaysListeningEnabled;
+    setAlwaysListeningEnabled(next);
+    updatePref("always_listening_enabled", next);
+    // Do not show a success toast yet — the context may emit an error
+    // once it tries to start the mic. The inline error row below the toggle
+    // is the source of truth.
+    if (!next) {
+      toast("Always Listening disabled");
+    }
   };
 
   const handleThemeChange = (mode: ThemeMode) => {
@@ -250,6 +281,17 @@ const Settings = () => {
     { name: "This device", browser: "Current browser", lastActive: "Now", current: true },
   ];
 
+  // Description for Always Listening row — reflects real service state.
+  const alwaysListeningDesc = (() => {
+    if (!alwaysListeningEnabled) return "Disabled";
+    if (alwaysListeningError) return "Unable to start — see details below";
+    if (alwaysListeningActive) {
+      const activeLabel = alwaysListeningFallback ? "Computer" : wakeWord;
+      return `Active — wake word: "${activeLabel}"`;
+    }
+    return "Starting…";
+  })();
+
   const sections = [
     {
       title: "Account",
@@ -265,19 +307,16 @@ const Settings = () => {
         {
           icon: AudioLines,
           label: "Always Listening",
-          desc: alwaysListeningEnabled ? `Active — wake word: "${wakeWord}"` : "Disabled",
+          desc: alwaysListeningDesc,
           toggle: true,
           toggled: alwaysListeningEnabled,
-          action: () => {
-            setAlwaysListeningEnabled(!alwaysListeningEnabled);
-            toast(alwaysListeningEnabled ? "Always Listening disabled" : "Always Listening enabled");
-          },
+          action: handleToggleAlwaysListening,
         },
         {
           icon: Mic,
           label: "Wake Word",
-          desc: `"${wakeWord}"`,
-          action: () => toast("Wake word customization coming soon"),
+          desc: `"${alwaysListeningFallback ? "Computer" : wakeWord}"`,
+          action: () => toast("Wake word is set during build. Contact support to request a different keyword."),
         },
       ],
     },
@@ -313,7 +352,13 @@ const Settings = () => {
 
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-3xl mx-auto">
+      <div
+        className="px-4 max-w-[780px] mx-auto"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 6rem)",
+        }}
+      >
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -334,16 +379,30 @@ const Settings = () => {
               {section.title}
             </h2>
             <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-              {section.items.map((item: any, i: number) => (
+              {section.items.map((item: {
+                icon: typeof User;
+                label: string;
+                desc: string;
+                action: () => void;
+                toggle?: boolean;
+                toggled?: boolean;
+                connected?: boolean;
+                loading?: boolean;
+                danger?: boolean;
+              }, i: number) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={item.action}
                   disabled={item.loading}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left disabled:opacity-60"
+                  aria-label={item.label}
+                  aria-pressed={item.toggle ? item.toggled : undefined}
+                  className="w-full flex items-center gap-3 min-h-[44px] px-4 py-3.5 hover:bg-muted/50 transition-colors text-left disabled:opacity-60"
                 >
                   <item.icon
                     size={20}
                     className={item.danger ? "text-destructive" : "text-muted-foreground"}
+                    aria-hidden="true"
                   />
                   <div className="flex-1 min-w-0">
                     <p className={`text-[14px] font-medium ${item.danger ? "text-destructive" : "text-foreground"}`}>
@@ -352,41 +411,64 @@ const Settings = () => {
                     <p className="text-[12px] text-muted-foreground truncate">{item.desc}</p>
                   </div>
                   {item.loading ? (
-                    <Loader2 size={16} className="text-muted-foreground animate-spin" />
+                    <Loader2 size={16} className="text-muted-foreground animate-spin" aria-hidden="true" />
                   ) : item.toggle ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); item.action(); }}
+                    <span
                       className={`w-10 h-6 rounded-full relative transition-colors ${
                         item.toggled ? "bg-primary" : "bg-muted-foreground/30"
                       }`}
+                      aria-hidden="true"
                     >
-                      <motion.div
+                      <motion.span
                         animate={{ x: item.toggled ? 16 : 2 }}
                         transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                        className="absolute top-0.5 w-5 h-5 bg-primary-foreground rounded-full shadow-sm"
+                        className="absolute top-0.5 w-5 h-5 bg-primary-foreground rounded-full shadow-sm block"
                       />
-                    </button>
+                    </span>
                   ) : item.connected !== undefined ? (
                     <span className={`text-[11px] font-medium ${item.connected ? "text-primary" : "text-muted-foreground"}`}>
                       {item.connected ? "Connected" : "Connect"}
                     </span>
                   ) : (
-                    <ChevronRight size={16} className="text-muted-foreground" />
+                    <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
                   )}
                 </button>
               ))}
             </div>
+
+            {/* Live & Voice: Always Listening error + fallback notices */}
+            {section.title === "Live & Voice" && alwaysListeningEnabled && alwaysListeningError && (
+              <div
+                role="alert"
+                className="mt-2 mx-1 p-3 rounded-xl border border-destructive/30 bg-destructive/5 flex items-start gap-2"
+              >
+                <AlertTriangle size={16} className="text-destructive shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-medium text-destructive">Always Listening failed to start</p>
+                  <p className="text-[12px] text-muted-foreground mt-0.5">{alwaysListeningError}</p>
+                </div>
+              </div>
+            )}
+            {section.title === "Live & Voice" && alwaysListeningEnabled && !alwaysListeningError && alwaysListeningFallback && (
+              <div className="mt-2 mx-1 p-3 rounded-xl border border-border bg-muted/50">
+                <p className="text-[12px] text-muted-foreground">
+                  Running with the built-in "Computer" wake word. The custom "Hey Seven" model couldn't be loaded.
+                </p>
+              </div>
+            )}
           </motion.div>
         ))}
 
         <motion.button
+          type="button"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
           onClick={() => setSignOutDialogOpen(true)}
-          className="w-full flex items-center justify-center gap-2 py-3 text-destructive text-[14px] font-medium mt-4"
+          aria-label="Sign out"
+          className="w-full flex items-center justify-center gap-2 min-h-[44px] py-3 text-destructive text-[14px] font-medium mt-4"
         >
-          <LogOut size={18} />
+          <LogOut size={18} aria-hidden="true" />
           Sign out
         </motion.button>
       </div>
@@ -405,17 +487,19 @@ const Settings = () => {
             ]).map((opt) => (
               <button
                 key={opt.mode}
+                type="button"
                 onClick={() => handleThemeChange(opt.mode)}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border transition-all ${
+                aria-pressed={theme === opt.mode}
+                className={`w-full flex items-center gap-3 min-h-[44px] px-4 py-3.5 rounded-xl border transition-all ${
                   theme === opt.mode ? "border-primary/30 bg-primary/5" : "border-border hover:bg-muted/50"
                 }`}
               >
-                <opt.icon size={20} className={theme === opt.mode ? "text-primary" : "text-muted-foreground"} />
+                <opt.icon size={20} className={theme === opt.mode ? "text-primary" : "text-muted-foreground"} aria-hidden="true" />
                 <div className="flex-1 text-left">
                   <p className="text-[14px] font-medium text-foreground">{opt.label}</p>
                   <p className="text-[12px] text-muted-foreground">{opt.desc}</p>
                 </div>
-                {theme === opt.mode && <Check size={18} className="text-primary" />}
+                {theme === opt.mode && <Check size={18} className="text-primary" aria-hidden="true" />}
               </button>
             ))}
           </div>
@@ -432,9 +516,9 @@ const Settings = () => {
             {sessions.map((s, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border"
+                className="flex items-center gap-3 min-h-[44px] px-4 py-3.5 rounded-xl border border-border"
               >
-                <Smartphone size={20} className="text-muted-foreground" />
+                <Smartphone size={20} className="text-muted-foreground" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] font-medium text-foreground">
                     {s.name}
@@ -444,8 +528,9 @@ const Settings = () => {
                 </div>
                 {!s.current && (
                   <button
+                    type="button"
                     onClick={() => toast("Session revoked")}
-                    className="text-[11px] text-destructive font-medium hover:underline"
+                    className="min-h-[44px] px-3 text-[11px] text-destructive font-medium hover:underline"
                   >
                     Revoke
                   </button>
@@ -461,20 +546,21 @@ const Settings = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle size={20} className="text-destructive" />
+              <AlertTriangle size={20} className="text-destructive" aria-hidden="true" />
               Delete Account
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
-              <p>This action is permanent and cannot be undone. All your data, sections, and connected devices will be permanently removed.</p>
-              <div>
-                <p className="text-[12px] text-foreground font-medium mb-1.5">Type DELETE to confirm:</p>
+              <span className="block">This action is permanent and cannot be undone. All your data, sections, and connected devices will be permanently removed.</span>
+              <span className="block">
+                <span className="block text-[12px] text-foreground font-medium mb-1.5">Type DELETE to confirm:</span>
                 <input
                   value={deleteConfirmText}
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
                   placeholder="DELETE"
+                  aria-label="Type DELETE to confirm account deletion"
                   className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-[14px] outline-none focus:border-destructive/50"
                 />
-              </div>
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

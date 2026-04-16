@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, MicOff, Send, Plus, Loader2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import LiveButton from "./LiveButton";
 import { useDeepgramDictation } from "@/hooks/use-deepgram-dictation";
 import { supabase } from "@/lib/supabase";
@@ -130,8 +130,11 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   };
 
   return (
-    <div className="fixed left-0 right-0 z-40 px-3 pb-2 bg-background" style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))" }}>
-      <div className="max-w-lg mx-auto">
+    <div
+      className="fixed left-0 right-0 z-40 px-3 pb-2 bg-background"
+      style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px))" }}
+    >
+      <div className="max-w-[780px] mx-auto">
         <div className="bg-card rounded-[28px] border border-border/50 shadow-[0_1px_3px_0_rgba(0,0,0,0.08)] flex items-end gap-1 px-2 py-1.5">
           {/* Hidden file input */}
           <input
@@ -140,15 +143,18 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             accept=".pdf,.docx,.doc,.txt,.md,.csv,.xlsx,.xls,.png,.jpg,.jpeg"
             className="hidden"
             onChange={handleFileSelect}
+            aria-hidden="true"
+            tabIndex={-1}
           />
 
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5 disabled:opacity-50"
-            aria-label="Upload document"
+            className="w-11 h-11 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-0.5 disabled:opacity-50"
+            aria-label={uploading ? "Uploading document" : "Upload document"}
           >
-            {uploading ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+            {uploading ? <Loader2 size={20} className="animate-spin" aria-hidden="true" /> : <Plus size={20} aria-hidden="true" />}
           </button>
 
           <textarea
@@ -163,28 +169,33 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             }}
             placeholder={recording ? "Listening…" : uploading ? "Processing document…" : "Talk to Seven"}
             rows={1}
+            aria-label="Message Seven"
             className="flex-1 bg-transparent text-foreground text-[15px] placeholder:text-muted-foreground outline-none resize-none py-2 leading-relaxed min-h-[24px]"
           />
 
           {hasText && !recording ? (
             <motion.button
+              type="button"
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               onClick={handleSend}
-              className="w-9 h-9 bg-primary text-primary-foreground rounded-full flex items-center justify-center shrink-0 mb-0.5"
+              aria-label="Send message"
+              className="w-11 h-11 bg-primary text-primary-foreground rounded-full flex items-center justify-center shrink-0 mb-0.5"
             >
-              <Send size={16} />
+              <Send size={16} aria-hidden="true" />
             </motion.button>
           ) : (
             <>
               <button
+                type="button"
                 onClick={() => setRecording((r) => !r)}
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors shrink-0 mb-0.5 ${
+                className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors shrink-0 mb-0.5 ${
                   recording ? "bg-destructive/15 text-destructive animate-pulse" : "text-muted-foreground hover:bg-muted"
                 }`}
                 aria-label={recording ? "Stop recording" : "Start voice input"}
+                aria-pressed={recording}
               >
-                {recording ? <MicOff size={20} /> : <Mic size={20} />}
+                {recording ? <MicOff size={20} aria-hidden="true" /> : <Mic size={20} aria-hidden="true" />}
               </button>
               {onLive && <LiveButton onClick={onLive} />}
             </>
