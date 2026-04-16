@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
-import { ChevronDown, ChevronUp, ShieldCheck, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { PageError } from "@/components/PageError";
+import { TraceSkeleton } from "@/components/PageSkeletons";
 
 interface TraceEntry {
   id: string;
@@ -21,23 +23,32 @@ const Trace = () => {
   const { user } = useAuth();
   const [traces, setTraces] = useState<TraceEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setLoadError(null);
+    const { data, error } = await supabase
+      .from("memory_traces")
+      .select("id, action_description, reasoning, sources, memory_ids, fact_ids, decision_ids, situation_ids, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (error) {
+      setLoadError(error);
+      setLoading(false);
+      return;
+    }
+    if (data) setTraces(data);
+    setLoading(false);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
-    const load = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("memory_traces")
-        .select("id, action_description, reasoning, sources, memory_ids, fact_ids, decision_ids, situation_ids, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(30);
-      if (data) setTraces(data);
-      setLoading(false);
-    };
     load();
-  }, [user]);
+  }, [user, load]);
 
   const timeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -49,24 +60,49 @@ const Trace = () => {
     return `${days}d ago`;
   };
 
+  if (loading) {
+    return (
+      <AppLayout>
+        <TraceSkeleton />
+      </AppLayout>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <AppLayout>
+        <PageError
+          title="Unable to load trace"
+          message="We couldn't load your governance trace right now. Please try again."
+          onRetry={load}
+          error={loadError}
+        />
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
-      <div className="pt-16 pb-24 px-4 max-w-3xl mx-auto">
+      <div
+        className="px-4 max-w-[780px] mx-auto"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 6rem)",
+        }}
+      >
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <div className="flex items-center gap-2 mb-1">
-            <ShieldCheck size={18} className="text-primary" />
+            <ShieldCheck size={18} className="text-primary" aria-hidden="true" />
             <h1 className="text-[22px] font-medium text-foreground tracking-tight">Governance Trace</h1>
           </div>
           <p className="text-[14px] text-muted-foreground mt-1">Why Seven said what it said. Full transparency.</p>
         </motion.div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="animate-spin text-primary" size={24} />
-          </div>
-        ) : traces.length === 0 ? (
+        {traces.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-[14px] text-muted-foreground">No traces yet. Chat with Seven and traces will appear here.</p>
+            <p className="text-[14px] text-muted-foreground max-w-[420px] mx-auto leading-relaxed">
+              No traces yet. Chat with Seven and traces will appear here.
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -79,8 +115,11 @@ const Trace = () => {
                 className="bg-card border border-border rounded-2xl overflow-hidden"
               >
                 <button
+                  type="button"
                   onClick={() => setExpanded(expanded === trace.id ? null : trace.id)}
-                  className="w-full flex items-start justify-between p-4 text-left"
+                  aria-expanded={expanded === trace.id}
+                  aria-label={expanded === trace.id ? "Collapse trace details" : "Expand trace details"}
+                  className="w-full flex items-start justify-between min-h-[44px] p-4 text-left"
                 >
                   <div className="flex-1 mr-3">
                     <p className="text-[14px] font-medium text-foreground leading-snug">
@@ -89,9 +128,9 @@ const Trace = () => {
                     <span className="text-[11px] text-muted-foreground mt-1 block">{timeAgo(trace.created_at)}</span>
                   </div>
                   {expanded === trace.id ? (
-                    <ChevronUp size={16} className="text-muted-foreground mt-1" />
+                    <ChevronUp size={16} className="text-muted-foreground mt-1" aria-hidden="true" />
                   ) : (
-                    <ChevronDown size={16} className="text-muted-foreground mt-1" />
+                    <ChevronDown size={16} className="text-muted-foreground mt-1" aria-hidden="true" />
                   )}
                 </button>
 

@@ -21,27 +21,36 @@ const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDism
   const isSubPage = !mainPages.includes(location.pathname);
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-background" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+    <header
+      className="fixed top-0 left-0 right-0 z-50 bg-background"
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+    >
       <div className="flex items-center justify-between px-4 h-14">
         {isSubPage ? (
           <button
+            type="button"
             onClick={() => navigate(-1)}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+            aria-label="Go back"
+            className="w-11 h-11 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
           >
-            <ArrowLeft size={22} className="text-foreground/70" />
+            <ArrowLeft size={22} className="text-foreground/70" aria-hidden="true" />
           </button>
         ) : (
           <button
+            type="button"
             onClick={onMenuClick}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+            aria-label="Open menu"
+            className="w-11 h-11 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
           >
-            <Menu size={22} className="text-foreground/70" />
+            <Menu size={22} className="text-foreground/70" aria-hidden="true" />
           </button>
         )}
 
         <button
+          type="button"
           onClick={() => navigate("/home")}
-          className="flex items-center gap-2"
+          aria-label="Seven Mynd home"
+          className="flex items-center gap-2 min-h-[44px] px-2 rounded-full"
         >
           <SevenLogo size={20} />
           <span className="font-medium text-foreground text-[16px] tracking-tight">Seven</span>
@@ -58,8 +67,10 @@ const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDism
             />
           )}
           <button
+            type="button"
             onClick={() => navigate("/settings")}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+            aria-label="Open settings"
+            className="w-11 h-11 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
           >
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[13px] font-medium">
               {(localStorage.getItem("seven_user_name") || "U").charAt(0).toUpperCase()}
@@ -67,7 +78,7 @@ const TopNav = ({ onMenuClick, reminders, unseenCount = 0, onAddReminder, onDism
           </button>
         </div>
       </div>
-    </div>
+    </header>
   );
 };
 

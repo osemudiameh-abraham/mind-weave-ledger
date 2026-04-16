@@ -34,15 +34,12 @@ const Home = () => {
   const { reminders, unseen, dueNow, addReminder, markSeen, markAllSeen, dismissReminder } = useReminders();
   const {
     sections,
-    visibleSections,
-    activeSection,
     activeSectionId,
     setActiveSectionId,
     createSection,
     renameSection,
     deleteSection,
     toggleHideSection,
-    addMessage,
   } = useSections();
 
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
@@ -229,7 +226,13 @@ const Home = () => {
         onMarkAllSeen={markAllSeen}
       />
 
-      <div className="pt-14 pb-32 px-4 max-w-3xl mx-auto">
+      <div
+        className="px-4 max-w-[780px] mx-auto"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 3.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 8rem)",
+        }}
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh]">
             <motion.div
@@ -278,8 +281,9 @@ const Home = () => {
               {suggestions.map((s, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => handleSend(s)}
-                  className="px-4 py-2.5 rounded-full border border-border bg-card text-[13px] text-foreground font-medium hover:bg-muted transition-colors"
+                  className="min-h-[44px] px-4 py-2.5 rounded-full border border-border bg-card text-[13px] text-foreground font-medium hover:bg-muted transition-colors"
                 >
                   {s}
                 </button>
@@ -297,7 +301,7 @@ const Home = () => {
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {msg.role === "user" ? (
-                  <div className="max-w-[85%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
+                  <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
                     {msg.text}
                   </div>
                 ) : (
@@ -326,16 +330,17 @@ const Home = () => {
       <AnimatePresence>
         {showScrollButton && messages.length > 0 && (
           <motion.button
+            type="button"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.15 }}
             onClick={scrollToBottom}
-            className="fixed z-50 right-4 w-10 h-10 rounded-full bg-card border border-border shadow-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="fixed z-50 right-4 w-11 h-11 rounded-full bg-card border border-border shadow-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px) + 72px)" }}
             aria-label="Scroll to latest message"
           >
-            <ArrowDown size={18} />
+            <ArrowDown size={18} aria-hidden="true" />
           </motion.button>
         )}
       </AnimatePresence>

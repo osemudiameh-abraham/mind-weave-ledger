@@ -14,16 +14,23 @@ const BottomNav = () => {
   const location = useLocation();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-      <div className="flex items-center justify-around max-w-lg mx-auto">
+    <nav
+      aria-label="Primary"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      <div className="flex items-center justify-around max-w-lg mx-auto h-14">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = location.pathname === tab.path;
           return (
             <button
               key={tab.path}
+              type="button"
               onClick={() => navigate(tab.path)}
-              className="flex flex-col items-center py-2 px-3 min-w-[56px]"
+              aria-label={`Go to ${tab.label}`}
+              aria-current={active ? "page" : undefined}
+              className="flex flex-col items-center justify-center h-full min-h-[44px] min-w-[44px] px-3"
             >
               <div
                 className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
@@ -34,6 +41,7 @@ const BottomNav = () => {
                   size={20}
                   strokeWidth={active ? 2.2 : 1.5}
                   className={active ? "text-primary" : "text-muted-foreground"}
+                  aria-hidden="true"
                 />
               </div>
               <span
@@ -47,7 +55,7 @@ const BottomNav = () => {
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 };
 

@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
-import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Download, Trash2, X, Check, Camera } from "lucide-react";
+import { ChevronRight, Brain, Bell, Shield, Database, Palette, Info, LogOut, Moon, Sun, Monitor, Trash2, Check, Camera } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
@@ -31,7 +31,6 @@ const Profile = () => {
   const [checkinSchedule, setCheckinSchedule] = useState(saved?.checkinSchedule ?? "Daily, Morning");
   const [remindersEnabled, setRemindersEnabled] = useState(saved?.remindersEnabled ?? true);
 
-  const [governanceRules, setGovernanceRules] = useState(saved?.governanceRules ?? 3);
   const [appearance, setAppearance] = useState(saved?.appearance ?? "System");
 
   // Sheets
@@ -209,7 +208,13 @@ const Profile = () => {
 
   return (
     <AppLayout>
-      <div className="pt-14 pb-24 px-4 max-w-3xl mx-auto">
+      <div
+        className="px-4 max-w-[780px] mx-auto"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 3.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 6rem)",
+        }}
+      >
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
           className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border mt-4 mb-6">
           <div className="relative">
@@ -220,17 +225,27 @@ const Profile = () => {
                 {userName.charAt(0).toUpperCase()}
               </div>
             )}
-            <button onClick={() => { setEditName(userName); setEditEmail(userEmail); setEditAvatarPreview(null); setEditSheet(true); }}
-              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-md">
-              <Camera size={12} className="text-primary-foreground" />
+            <button
+              type="button"
+              onClick={() => { setEditName(userName); setEditEmail(userEmail); setEditAvatarPreview(null); setEditSheet(true); }}
+              aria-label="Edit profile picture"
+              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-md"
+            >
+              <Camera size={12} className="text-primary-foreground" aria-hidden="true" />
             </button>
           </div>
           <div className="flex-1">
             <h2 className="text-[16px] font-medium text-foreground">{userName}</h2>
             <p className="text-[12px] text-muted-foreground mt-0.5">{userEmail}</p>
           </div>
-          <button onClick={() => { setEditName(userName); setEditEmail(userEmail); setEditSheet(true); }}
-            className="text-[13px] text-primary font-medium hover:underline transition-all">Edit</button>
+          <button
+            type="button"
+            onClick={() => { setEditName(userName); setEditEmail(userEmail); setEditSheet(true); }}
+            aria-label="Edit profile"
+            className="min-h-[44px] px-3 text-[13px] text-primary font-medium hover:underline transition-all"
+          >
+            Edit
+          </button>
         </motion.div>
 
         {sections.map((section, sectionIdx) => (
@@ -238,11 +253,21 @@ const Profile = () => {
             transition={{ delay: sectionIdx * 0.05, duration: 0.3 }} className="mb-6">
             <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest mb-2.5 px-1">{section.title}</h3>
             <div className="rounded-2xl bg-card border border-border overflow-hidden">
-              {section.items.map((item: any, i) => (
+              {section.items.map((item: {
+                label: string;
+                icon: typeof Brain;
+                toggle?: boolean;
+                value?: boolean;
+                onChange?: () => void;
+                subtitle?: string;
+                onTap?: () => void;
+                destructive?: boolean;
+                loading?: boolean;
+              }, i) => (
                 <div key={item.label}
                   onClick={() => !item.toggle && item.onTap?.()}
-                  className={`flex items-center gap-3.5 px-4 py-3.5 ${i < section.items.length - 1 ? "border-b border-border" : ""} ${!item.toggle && item.onTap ? "cursor-pointer hover:bg-accent/50" : ""} transition-colors`}>
-                  <item.icon size={18} className={`shrink-0 ${item.destructive ? "text-destructive" : "text-muted-foreground"}`} />
+                  className={`flex items-center gap-3.5 min-h-[44px] px-4 py-3.5 ${i < section.items.length - 1 ? "border-b border-border" : ""} ${!item.toggle && item.onTap ? "cursor-pointer hover:bg-accent/50" : ""} transition-colors`}>
+                  <item.icon size={18} className={`shrink-0 ${item.destructive ? "text-destructive" : "text-muted-foreground"}`} aria-hidden="true" />
                   <div className="flex-1">
                     <p className={`text-[14px] font-medium ${item.destructive ? "text-destructive" : "text-foreground"}`}>
                       {item.loading ? "Exporting..." : item.label}
@@ -250,12 +275,17 @@ const Profile = () => {
                     {item.subtitle && <p className="text-[11px] text-muted-foreground mt-0.5">{item.subtitle}</p>}
                   </div>
                   {item.toggle ? (
-                    <button onClick={item.onChange}
-                      className={`w-[42px] h-[26px] rounded-full transition-all duration-200 flex items-center px-0.5 ${item.value ? "bg-primary" : "bg-border"}`}>
+                    <button
+                      type="button"
+                      onClick={item.onChange}
+                      aria-label={`Toggle ${item.label}`}
+                      aria-pressed={item.value}
+                      className={`w-[42px] h-[26px] rounded-full transition-all duration-200 flex items-center px-0.5 ${item.value ? "bg-primary" : "bg-border"}`}
+                    >
                       <div className={`w-[22px] h-[22px] rounded-full bg-card shadow-sm transition-transform duration-200 ${item.value ? "translate-x-4" : "translate-x-0"}`} />
                     </button>
                   ) : (
-                    <ChevronRight size={16} className="text-muted-foreground opacity-50" />
+                    <ChevronRight size={16} className="text-muted-foreground opacity-50" aria-hidden="true" />
                   )}
                 </div>
               ))}
@@ -263,10 +293,14 @@ const Profile = () => {
           </motion.div>
         ))}
 
-        <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} whileTap={{ scale: 0.98 }}
+        <motion.button
+          type="button"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} whileTap={{ scale: 0.98 }}
           onClick={() => { auth.signOut(); toast.success("Signed out"); navigate("/login"); }}
-          className="w-full flex items-center justify-center gap-2 h-12 rounded-full text-destructive text-[14px] font-medium bg-card border border-border hover:shadow-sm transition-all duration-200">
-          <LogOut size={16} />
+          aria-label="Sign out"
+          className="w-full flex items-center justify-center gap-2 h-12 rounded-full text-destructive text-[14px] font-medium bg-card border border-border hover:shadow-sm transition-all duration-200"
+        >
+          <LogOut size={16} aria-hidden="true" />
           Sign out
         </motion.button>
       </div>
@@ -286,9 +320,13 @@ const Profile = () => {
                     {editName.charAt(0).toUpperCase()}
                   </div>
                 )}
-                <button onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-md">
-                  <Camera size={14} className="text-primary-foreground" />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Change profile photo"
+                  className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-md"
+                >
+                  <Camera size={14} className="text-primary-foreground" aria-hidden="true" />
                 </button>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
               </div>
@@ -302,8 +340,11 @@ const Profile = () => {
               <label className="text-[12px] text-muted-foreground mb-1 block">Email</label>
               <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="Your email" type="email" />
             </div>
-            <button onClick={handleSaveProfile}
-              className="w-full h-11 rounded-full bg-primary text-primary-foreground text-[14px] font-medium">
+            <button
+              type="button"
+              onClick={handleSaveProfile}
+              className="w-full h-11 rounded-full bg-primary text-primary-foreground text-[14px] font-medium"
+            >
               Save Changes
             </button>
           </div>
@@ -316,14 +357,22 @@ const Profile = () => {
           <SheetHeader><SheetTitle>Check-in Schedule</SheetTitle></SheetHeader>
           <div className="space-y-2 mt-4">
             {checkinOptions.map(opt => (
-              <button key={opt} onClick={() => setSelectedCheckin(opt)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${selectedCheckin === opt ? "border-primary bg-primary/10" : "border-border"}`}>
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setSelectedCheckin(opt)}
+                aria-pressed={selectedCheckin === opt}
+                className={`w-full flex items-center justify-between min-h-[44px] px-4 py-3 rounded-xl border transition-all ${selectedCheckin === opt ? "border-primary bg-primary/10" : "border-border"}`}
+              >
                 <span className="text-[14px] text-foreground">{opt}</span>
-                {selectedCheckin === opt && <Check size={16} className="text-primary" />}
+                {selectedCheckin === opt && <Check size={16} className="text-primary" aria-hidden="true" />}
               </button>
             ))}
-            <button onClick={handleSaveCheckin}
-              className="w-full h-11 rounded-full bg-primary text-primary-foreground text-[14px] font-medium mt-3">
+            <button
+              type="button"
+              onClick={handleSaveCheckin}
+              className="w-full h-11 rounded-full bg-primary text-primary-foreground text-[14px] font-medium mt-3"
+            >
               Save
             </button>
           </div>
@@ -336,10 +385,15 @@ const Profile = () => {
           <SheetHeader><SheetTitle>Governance Rules</SheetTitle></SheetHeader>
           <div className="space-y-2 mt-4">
             {rules.map((rule, idx) => (
-              <div key={idx} className="flex items-center justify-between px-4 py-3 rounded-xl border border-border">
+              <div key={idx} className="flex items-center justify-between min-h-[44px] px-4 py-3 rounded-xl border border-border">
                 <span className="text-[13px] text-foreground flex-1 pr-3">{rule.label}</span>
-                <button onClick={() => handleToggleRule(idx)}
-                  className={`w-[42px] h-[26px] rounded-full transition-all duration-200 flex items-center px-0.5 ${rule.enabled ? "bg-primary" : "bg-border"}`}>
+                <button
+                  type="button"
+                  onClick={() => handleToggleRule(idx)}
+                  aria-label={`Toggle ${rule.label}`}
+                  aria-pressed={rule.enabled}
+                  className={`w-[42px] h-[26px] rounded-full transition-all duration-200 flex items-center px-0.5 ${rule.enabled ? "bg-primary" : "bg-border"}`}
+                >
                   <div className={`w-[22px] h-[22px] rounded-full bg-card shadow-sm transition-transform duration-200 ${rule.enabled ? "translate-x-4" : "translate-x-0"}`} />
                 </button>
               </div>
@@ -358,11 +412,16 @@ const Profile = () => {
               { label: "Dark", icon: Moon },
               { label: "System", icon: Monitor },
             ] as const).map(opt => (
-              <button key={opt.label} onClick={() => { setAppearance(opt.label); setAppearanceSheet(false); toast.success(`Theme set to ${opt.label}`); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${appearance === opt.label ? "border-primary bg-primary/10" : "border-border"}`}>
-                <opt.icon size={18} className="text-muted-foreground" />
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => { setAppearance(opt.label); setAppearanceSheet(false); toast.success(`Theme set to ${opt.label}`); }}
+                aria-pressed={appearance === opt.label}
+                className={`w-full flex items-center gap-3 min-h-[44px] px-4 py-3 rounded-xl border transition-all ${appearance === opt.label ? "border-primary bg-primary/10" : "border-border"}`}
+              >
+                <opt.icon size={18} className="text-muted-foreground" aria-hidden="true" />
                 <span className="text-[14px] text-foreground">{opt.label}</span>
-                {appearance === opt.label && <Check size={16} className="text-primary ml-auto" />}
+                {appearance === opt.label && <Check size={16} className="text-primary ml-auto" aria-hidden="true" />}
               </button>
             ))}
           </div>
@@ -377,8 +436,13 @@ const Profile = () => {
             <p><span className="text-foreground font-medium">Version:</span> 1.0.0</p>
             <p><span className="text-foreground font-medium">Build:</span> 2026.04.11</p>
             <p>Seven is your AI-powered memory companion — tracking decisions, habits, and patterns to help you grow.</p>
-            <button onClick={() => { navigate("/privacy"); setAboutSheet(false); }}
-              className="text-primary text-[13px] font-medium hover:underline">Privacy Policy →</button>
+            <button
+              type="button"
+              onClick={() => { navigate("/privacy"); setAboutSheet(false); }}
+              className="min-h-[44px] text-primary text-[13px] font-medium hover:underline"
+            >
+              Privacy Policy →
+            </button>
           </div>
         </SheetContent>
       </Sheet>

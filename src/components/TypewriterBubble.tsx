@@ -10,7 +10,7 @@ const TypewriterBubble = ({ text }: TypewriterBubbleProps) => {
   const { displayed, done } = useTypewriter(text, 18);
 
   return (
-    <div className="max-w-[85%] px-4 py-3 text-[14px] leading-relaxed text-foreground">
+    <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed text-foreground">
       <div className="flex items-center gap-2 mb-2">
         <SevenLogo size={16} />
         <span className="text-[12px] font-medium text-muted-foreground">Seven</span>
