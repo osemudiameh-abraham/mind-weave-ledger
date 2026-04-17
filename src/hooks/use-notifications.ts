@@ -110,7 +110,7 @@ export function useNotifications() {
       // Check decisions due for review
       const { data: dueDecisions, count } = await supabase
         .from("decisions")
-        .select("id, title", { count: "exact" })
+        .select("id, title:text_snapshot", { count: "exact" })
         .eq("user_id", session.user.id)
         .in("status", ["active", "pending_review"])
         .lte("review_due_at", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
@@ -147,10 +147,10 @@ export function useNotifications() {
           // Log it
           await supabase.from("notification_log").insert({
             user_id: session.user.id,
-            notification_type: "decision_review",
-            title: "Decision Review Due",
-            body: `Decision "${d.title.slice(0, 50)}" is due for review`,
-            delivered: true,
+            type: "decision_review",
+            channel: "push",
+            sent_at: new Date().toISOString(),
+            delivered_at: new Date().toISOString(),
           });
         }
       }
