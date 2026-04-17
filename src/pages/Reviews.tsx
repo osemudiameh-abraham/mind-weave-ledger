@@ -10,7 +10,7 @@ import { ReviewsSkeleton } from "@/components/PageSkeletons";
 
 interface Decision {
   id: string;
-  title: string;
+  text_snapshot: string;
   context_summary: string | null;
   confidence: string;
   status: string;
@@ -141,7 +141,7 @@ const Reviews = () => {
               >
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="text-[15px] font-medium text-foreground leading-snug flex-1 mr-3">
-                    {d.title}
+                    {d.text_snapshot}
                   </h3>
                   <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                     {formatDate(d.created_at)}

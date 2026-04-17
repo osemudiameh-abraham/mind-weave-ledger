@@ -50,7 +50,7 @@ const Memory = () => {
 
     try {
       const [decRes, patRes, factRes, outcomeRes] = await Promise.all([
-        supabase.from("decisions").select("title, status, created_at, outcome_count").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
+        supabase.from("decisions").select("title:text_snapshot, status, created_at, outcome_count").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
         supabase.from("behaviour_patterns").select("description, confidence, evidence_count, created_at").eq("user_id", user.id).order("confidence", { ascending: false }).limit(10),
         supabase.from("memory_facts").select("subject, attribute, value_text, source_type, created_at, confidence").eq("user_id", user.id).is("valid_until", null).order("created_at", { ascending: false }).limit(10),
         supabase.from("outcomes").select("outcome_label").eq("user_id", user.id),
