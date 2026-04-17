@@ -156,7 +156,7 @@ const Home = () => {
           .eq("user_id", userId).is("valid_until", null)
           .order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("memories_structured").select("id", { count: "exact", head: true })
-          .eq("user_id", userId).gte("captured_at", weekAgo),
+          .eq("user_id", userId).gte("created_at", weekAgo),
         supabase.from("memory_facts").select("id", { count: "exact", head: true })
           .eq("user_id", userId).is("valid_until", null),
       ]);
