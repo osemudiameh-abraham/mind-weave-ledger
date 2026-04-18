@@ -212,7 +212,11 @@ const SideMenu = ({
                           {section.name}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
-                          {section.messages.length} messages
+                          {section.messageCount === 0
+                            ? "No messages yet"
+                            : section.messageCount === 1
+                              ? "1 message"
+                              : `${section.messageCount} messages`}
                         </p>
                       </div>
                       <button
@@ -276,7 +280,13 @@ const SideMenu = ({
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium truncate">{section.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{section.messages.length} messages</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {section.messageCount === 0
+                          ? "No messages yet"
+                          : section.messageCount === 1
+                            ? "1 message"
+                            : `${section.messageCount} messages`}
+                      </p>
                     </div>
                     <button
                       onClick={(e) => {
