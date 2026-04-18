@@ -253,7 +253,35 @@ export class RealLiveService implements LiveService {
   // Config & connection state
   private config: LiveServiceConfig | null = null;
   private status: LiveSessionStatus = "idle";
-  private sectionId: string | null = null;
+  // sectionId is persisted in sessionStorage so voice conversations reuse the
+  // same chat section across page navigations within one browser tab. Without
+  // this, every /live entry spawned a fresh section and cluttered the sidebar.
+  // sessionStorage naturally dies on tab close → next tab gets a fresh section.
+  private sectionId: string | null = RealLiveService.loadPersistedSectionId();
+
+  private static loadPersistedSectionId(): string | null {
+    try {
+      if (typeof window !== "undefined" && window.sessionStorage) {
+        return window.sessionStorage.getItem("seven_live_section_id");
+      }
+    } catch {
+      // sessionStorage can throw in privacy mode — fall back to fresh section.
+    }
+    return null;
+  }
+
+  private persistSectionId(id: string | null): void {
+    try {
+      if (typeof window === "undefined" || !window.sessionStorage) return;
+      if (id) {
+        window.sessionStorage.setItem("seven_live_section_id", id);
+      } else {
+        window.sessionStorage.removeItem("seven_live_section_id");
+      }
+    } catch {
+      // Non-fatal — session reuse is nice-to-have, not required for correctness.
+    }
+  }
 
   // Deepgram WebSocket
   private sttSocket: WebSocket | null = null;
@@ -356,7 +384,11 @@ export class RealLiveService implements LiveService {
     this.status = "idle";
     this.config?.onStatusChange("idle");
     this.config = null;
-    this.sectionId = null;
+    // Intentionally do NOT clear this.sectionId here — it should persist across
+    // page navigations within the same browser tab (via sessionStorage) so that
+    // voice conversations reuse the same section rather than creating a new one
+    // every time the user returns to /live. sessionStorage clears on tab close,
+    // which is the natural boundary for "new conversation".
   }
 
   sendText(text: string): void {
@@ -819,7 +851,11 @@ export class RealLiveService implements LiveService {
           }
 
           if (parsed.type === "done") {
-            this.sectionId = parsed.section_id || this.sectionId;
+            const newSectionId = parsed.section_id || this.sectionId;
+            if (newSectionId !== this.sectionId) {
+              this.persistSectionId(newSectionId);
+            }
+            this.sectionId = newSectionId;
             // Flush any remaining text in buffer to TTS
             if (tokenBuffer.trim()) {
               this.lastSpokenText = fullText;
