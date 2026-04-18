@@ -108,8 +108,9 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
 
       toast.info(`Processing ${file.name}...`);
 
-      // Trigger processing
-      const { error: processErr } = await supabase.functions.invoke("document-process", {
+      // Trigger processing. The Edge Function awaits the full 10-step pipeline
+      // and returns a summary we can surface to the chat immediately.
+      const { data: processData, error: processErr } = await supabase.functions.invoke("document-process", {
         body: { document_id: doc.id },
       });
 
@@ -117,9 +118,21 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
         toast.error(`Failed to process ${file.name}`);
         console.error("[DOC_UPLOAD] Processing failed:", processErr);
       } else {
-        // Send a message about the uploaded document
-        onSend(`I just uploaded a document: ${file.name}. What can you tell me about it?`);
-        toast.success(`${file.name} processed successfully`);
+        // Compose a chat message that includes the extracted summary inline,
+        // so the chat function has the document's content available on this
+        // turn without waiting for semantic search over freshly-written
+        // memories_structured chunks. The prefix keeps the user's intent
+        // explicit ("I uploaded X") while the summary gives Seven substance.
+        const summary: string = (processData?.summary as string | undefined)?.trim() || "";
+        const isImage = file.type.startsWith("image/");
+        const noun = isImage ? "image" : "document";
+
+        const messageBody = summary
+          ? `I just uploaded ${isImage ? "an" : "a"} ${noun}: ${file.name}.\n\n---\n${summary}\n---\n\nWhat can you tell me about it?`
+          : `I just uploaded ${isImage ? "an" : "a"} ${noun}: ${file.name}. What can you tell me about it?`;
+
+        onSend(messageBody);
+        toast.success(`${file.name} ready`);
       }
     } catch (err) {
       console.error("[DOC_UPLOAD] Upload failed:", err);
