@@ -218,32 +218,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteAccount = useCallback(async () => {
     if (!state.user) return;
-    const uid = state.user.id;
-    // Delete ALL user data from ALL tables (Architecture Section 19.8)
-    await Promise.allSettled([
-      supabase.from("messages").delete().eq("user_id", uid),
-      supabase.from("memories_structured").delete().eq("user_id", uid),
-      supabase.from("memory_facts").delete().eq("user_id", uid),
-      supabase.from("memory_traces").delete().eq("user_id", uid),
-      supabase.from("decisions").delete().eq("user_id", uid),
-      supabase.from("outcomes").delete().eq("user_id", uid),
-      supabase.from("sections").delete().eq("user_id", uid),
-      supabase.from("situations").delete().eq("user_id", uid),
-      supabase.from("situation_entities").delete().eq("user_id", uid),
-      supabase.from("behaviour_patterns").delete().eq("user_id", uid),
-      supabase.from("identity_model").delete().eq("user_id", uid),
-      supabase.from("identity_profiles").delete().eq("user_id", uid),
-      supabase.from("pending_actions").delete().eq("user_id", uid),
-      supabase.from("notification_subscriptions").delete().eq("user_id", uid),
-      supabase.from("notification_log").delete().eq("user_id", uid),
-      supabase.from("documents").delete().eq("user_id", uid),
-      supabase.from("digest_entries").delete().eq("user_id", uid),
-      supabase.from("subscriptions").delete().eq("user_id", uid),
-      supabase.from("user_preferences").delete().eq("user_id", uid),
-      supabase.from("review_completion_events").delete().eq("user_id", uid),
-      supabase.from("audit_log").delete().eq("user_id", uid),
-      supabase.from("oauth_tokens").delete().eq("user_id", uid),
-    ]);
+
+    // Server-side deletion (Architecture Section 19.8 — GDPR Article 17).
+    // The Edge Function handles storage cleanup, FK-ordered row deletion,
+    // anonymised audit record, and the auth.users delete itself.
+    //
+    // Any partial failure is surfaced as a thrown Error so the caller can
+    // show a real error state. Only on full success do we clear local
+    // session state and sign out.
+    const { data, error } = await supabase.functions.invoke("delete-account", {
+      body: {},
+    });
+
+    if (error) {
+      console.error("[DELETE_ACCOUNT] Edge Function invocation failed:", error);
+      throw new Error(error.message || "Account deletion failed. Please try again.");
+    }
+
+    // The Edge Function may return a 500 with details in data. The supabase-js
+    // client does not throw on non-2xx; it returns the body. Detect and escalate.
+    if (data && typeof data === "object" && "error" in data) {
+      const remoteError = (data as { error?: string }).error || "Account deletion failed";
+      console.error("[DELETE_ACCOUNT] Server reported error:", data);
+      throw new Error(remoteError);
+    }
+
+    // Success — clear local session state. The Edge Function has already
+    // deleted auth.users, so the current session is invalid; sign out cleans
+    // the client-side token.
     await supabase.auth.signOut();
     currentUserId.current = null;
     localStorage.removeItem("seven_user_name");
