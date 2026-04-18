@@ -40,6 +40,7 @@ const Home = () => {
     renameSection,
     deleteSection,
     toggleHideSection,
+    refreshSections,
   } = useSections();
 
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
@@ -119,8 +120,11 @@ const Home = () => {
     }
   }, [activeSectionId, loadSection, newSection]);
 
-  const handleSend = (text: string) => {
-    sendMessage(text);
+  const handleSend = async (text: string) => {
+    await sendMessage(text);
+    // DB trigger increments sections.message_count on message insert; re-sync
+    // sidebar so the count reflects the new message without a full page reload.
+    refreshSections();
   };
 
   const userName = localStorage.getItem("seven_user_name") || "there";
