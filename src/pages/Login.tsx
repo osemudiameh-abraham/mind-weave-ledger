@@ -172,6 +172,16 @@ const Login = () => {
             </button>
           </div>
 
+          <div className="flex justify-end px-2">
+            <button
+              type="button"
+              onClick={() => navigate("/forgot-password")}
+              className="text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Forgot password?
+            </button>
+          </div>
+
           {error && (
             <motion.p
               initial={{ opacity: 0, y: -4 }}
