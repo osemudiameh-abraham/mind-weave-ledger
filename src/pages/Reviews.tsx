@@ -10,7 +10,7 @@ import { ReviewsSkeleton } from "@/components/PageSkeletons";
 
 interface Decision {
   id: string;
-  text_snapshot: string;
+  text_snapshot: string | null;
   context_summary: string | null;
   confidence: string;
   status: string;
@@ -50,15 +50,40 @@ const Reviews = () => {
     load();
   }, [user, load]);
 
+  // Generate a deterministic UUID from a string. Required because the
+  // outcomes.idempotency_key column is type uuid; a raw string like
+  // "<decision-id>-<timestamp>" is rejected by PostgREST. Same pattern
+  // used server-side in supabase/functions/chat/index.ts.
+  const deterministicUuid = async (input: string): Promise<string> => {
+    const data = new TextEncoder().encode(input);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    const hex = Array.from(new Uint8Array(hash))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  };
+
   const submitOutcome = async (decisionId: string, outcome: "worked" | "failed" | "mixed") => {
     if (!user) return;
     setSubmitting(decisionId);
+
+    // One-per-day-per-decision idempotency: same decision+day produces the
+    // same uuid, so accidental double-taps won't create duplicate outcome rows.
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const idempKey = await deterministicUuid(`${decisionId}_${dayKey}`);
+
+    const outcomeLabelText: Record<typeof outcome, string> = {
+      worked: "Self-reported: good call",
+      mixed: "Self-reported: mixed result",
+      failed: "Self-reported: didn't work",
+    };
 
     const { error } = await supabase.from("outcomes").insert({
       user_id: user.id,
       decision_id: decisionId,
       outcome_label: outcome,
-      idempotency_key: `${decisionId}-${Date.now()}`,
+      text_snapshot: outcomeLabelText[outcome],
+      idempotency_key: idempKey,
     });
 
     if (!error) {
@@ -72,7 +97,15 @@ const Reviews = () => {
       );
       toast.success("Outcome recorded");
     } else {
-      toast.error("Failed to record outcome");
+      // Duplicate outcome for the same decision on the same day is expected
+      // and should surface as a friendly message, not a scary error.
+      const msg = error.message || "";
+      if (msg.toLowerCase().includes("duplicate") || msg.includes("23505")) {
+        toast("Already recorded today", { description: "You've already logged this one." });
+      } else {
+        console.error("[OUTCOME_SUBMIT] Failed:", error);
+        toast.error("Failed to record outcome");
+      }
     }
     setSubmitting(null);
   };
@@ -141,13 +174,13 @@ const Reviews = () => {
               >
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="text-[15px] font-medium text-foreground leading-snug flex-1 mr-3">
-                    {d.text_snapshot}
+                    {d.text_snapshot || d.context_summary || "Untitled decision"}
                   </h3>
                   <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                     {formatDate(d.created_at)}
                   </span>
                 </div>
-                {d.context_summary && (
+                {d.context_summary && d.context_summary !== d.text_snapshot && (
                   <p className="text-[13px] text-muted-foreground leading-relaxed mb-4">
                     {d.context_summary}
                   </p>
