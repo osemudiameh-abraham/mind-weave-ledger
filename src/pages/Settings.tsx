@@ -81,6 +81,7 @@ const Settings = () => {
   // Delete account dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   // Sign out dialog
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false);
@@ -258,12 +259,22 @@ const Settings = () => {
     setExporting(false);
   };
 
-  const handleDeleteAccount = () => {
-    if (deleteConfirmText !== "DELETE") return;
-    auth.deleteAccount();
-    toast("Account deleted. Redirecting…");
-    setDeleteDialogOpen(false);
-    setTimeout(() => navigate("/login"), 1000);
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE" || deleting) return;
+    setDeleting(true);
+    try {
+      await auth.deleteAccount();
+      toast.success("Account deleted. Redirecting…");
+      setDeleteDialogOpen(false);
+      setDeleteConfirmText("");
+      setTimeout(() => navigate("/login", { replace: true }), 800);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Account deletion failed";
+      console.error("[DELETE_ACCOUNT] Failed:", err);
+      toast.error(message);
+      setDeleting(false);
+      // Keep the dialog open so the user can try again or contact support.
+    }
   };
 
   const handleSignOut = () => {
@@ -542,7 +553,16 @@ const Settings = () => {
       </Sheet>
 
       {/* Delete Account Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          // Block dismissal while deletion is in flight to prevent mid-delete
+          // navigation leaving the UI in an unknown state.
+          if (deleting) return;
+          setDeleteDialogOpen(open);
+          if (!open) setDeleteConfirmText("");
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
@@ -558,19 +578,20 @@ const Settings = () => {
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
                   placeholder="DELETE"
                   aria-label="Type DELETE to confirm account deletion"
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-[14px] outline-none focus:border-destructive/50"
+                  disabled={deleting}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-[14px] outline-none focus:border-destructive/50 disabled:opacity-50"
                 />
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteAccount}
-              disabled={deleteConfirmText !== "DELETE"}
+              disabled={deleteConfirmText !== "DELETE" || deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
-              Delete my account
+              {deleting ? "Deleting…" : "Delete my account"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
