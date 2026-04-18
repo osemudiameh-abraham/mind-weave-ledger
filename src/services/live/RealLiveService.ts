@@ -711,17 +711,23 @@ export class RealLiveService implements LiveService {
     }
 
     if (result.speech_final) {
-      // Architecture Section 4.6: start a 700ms silence timer before committing.
-      // If user speaks again within 700ms, the timer is cancelled above and
-      // speech is appended to the same utterance. This prevents cutting off
-      // users who pause briefly mid-sentence.
+      // Start a silence timer before committing the utterance to chat.
+      // If user speaks again within this window, the timer is cancelled above
+      // and new speech is appended — so pauses mid-thought don't truncate.
+      //
+      // 1500ms is the tuned sweet spot paired with Deepgram's endpointing=500
+      // (see voice-stt Edge Function). Effective total pause tolerance ≈ 2s,
+      // which matches how long humans naturally pause between sentences when
+      // thinking aloud. Shorter values (700ms, the previous value) cut users
+      // off mid-thought; longer values create awkward silences after short
+      // answers like "yeah".
       if (this.turnTakingTimer) {
         clearTimeout(this.turnTakingTimer);
       }
       this.turnTakingTimer = setTimeout(() => {
         this.turnTakingTimer = null;
         this.commitTranscript();
-      }, 700);
+      }, 1500);
     }
   }
 
