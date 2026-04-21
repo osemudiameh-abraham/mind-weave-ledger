@@ -37,6 +37,13 @@ export function useChat() {
         body: {
           message: text,
           section_id: state.sectionId,
+          // Client context for time/locale awareness (Architecture Section 3.5).
+          // Kept minimal: timezone + locale. Server uses these to compute the
+          // user's local time and frame responses with correct day/date.
+          client_context: {
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            locale: navigator.language,
+          },
         },
       });
 
