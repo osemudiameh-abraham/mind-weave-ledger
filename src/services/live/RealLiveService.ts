@@ -803,6 +803,11 @@ export class RealLiveService implements LiveService {
           metadata: { source: "voice" },
           response_mode: "stream",
           visual_context: this.latestVisualContext || undefined,
+          // Client context for time/locale awareness. Same shape as text path.
+          client_context: {
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            locale: navigator.language,
+          },
         }),
         signal: this.streamAbortController.signal,
       });
