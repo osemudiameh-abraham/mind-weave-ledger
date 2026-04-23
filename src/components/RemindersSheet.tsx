@@ -127,6 +127,8 @@ const RemindersSheet = ({ reminders, unseenCount, onAdd, onDismiss, onMarkAllSee
             <AnimatePresence>
               {sorted.map((r) => {
                 const isPast = new Date(r.dueAt) <= new Date();
+                const isFired = r.fired === true;
+                const isPreReminder = typeof r.preLeadMinutes === "number";
                 return (
                   <motion.div
                     key={r.id}
@@ -135,31 +137,53 @@ const RemindersSheet = ({ reminders, unseenCount, onAdd, onDismiss, onMarkAllSee
                     exit={{ opacity: 0, x: -12 }}
                     className={cn(
                       "rounded-2xl border p-4 transition-colors",
-                      isPast
-                        ? "border-destructive/30 bg-destructive/5"
-                        : "border-border bg-card"
+                      isFired
+                        ? "border-primary/30 bg-primary/5"
+                        : isPast
+                          ? "border-destructive/30 bg-destructive/5"
+                          : "border-border bg-card"
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           {r.source === "seven" && (
                             <Sparkles size={13} className="text-primary shrink-0" />
                           )}
                           <p className="text-[14px] font-medium text-foreground truncate">{r.title}</p>
+                          {isFired && (
+                            <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                              {isPreReminder ? "Heads up" : "Delivered"}
+                            </span>
+                          )}
+                          {!isFired && r.importance === "important" && (
+                            <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              Important
+                            </span>
+                          )}
                         </div>
                         {r.description && (
                           <p className="text-[12px] text-muted-foreground leading-relaxed line-clamp-2">
                             {r.description}
                           </p>
                         )}
-                        <p className={cn("text-[11px] mt-2 font-medium", isPast ? "text-destructive" : "text-muted-foreground")}>
-                          {isPast ? "Due now" : format(new Date(r.dueAt), "MMM d, h:mm a")}
+                        <p className={cn(
+                          "text-[11px] mt-2 font-medium",
+                          isFired
+                            ? "text-primary"
+                            : isPast ? "text-destructive" : "text-muted-foreground"
+                        )}>
+                          {isFired
+                            ? `Arrived ${format(new Date(r.createdAt), "MMM d, h:mm a")}`
+                            : isPast
+                              ? "Due now"
+                              : format(new Date(r.dueAt), "MMM d, h:mm a")}
                         </p>
                       </div>
                       <button
                         onClick={() => onDismiss(r.id)}
                         className="shrink-0 p-1.5 rounded-full hover:bg-muted transition-colors text-muted-foreground"
+                        aria-label={isFired ? "Dismiss" : "Cancel reminder"}
                       >
                         <Trash2 size={15} />
                       </button>
