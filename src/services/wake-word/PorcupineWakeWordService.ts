@@ -5,11 +5,21 @@
  * Implements the existing `WakeWordService` interface (see ./types) so it
  * can be swapped in for `MockWakeWordService` with zero API changes.
  *
- * Architecture reference: Seven Mynd Master Architecture v5.5, Section 4.4.
+ * Architecture reference: Seven Mynd Master Architecture v5.7, Section 4.4.
  *   - Wake word runs entirely locally via WASM in a Web Worker.
  *   - No audio is sent to servers until the wake word is confirmed.
  *   - Custom "Hey Seven" keyword with graceful fallback to built-in "Computer"
  *     if the custom model fails to load.
+ *
+ * Graceful degrade (Phase 0.B Stage B3.1, Apr 23 2026):
+ *   When the Picovoice access key is missing, invalid, or expired, the
+ *   service surfaces `WAKE_WORD_UNAVAILABLE_MESSAGE` via `onError` with
+ *   NO console output. The provider (AlwaysListeningContext) treats this
+ *   as a non-retriable failure for the current session — attempting the
+ *   built-in fallback keyword would hit the same auth surface, so we
+ *   do not try. Manual microphone input is always available regardless
+ *   of wake word state; nothing else in the app depends on the wake
+ *   word listener being up.
  *
  * Bundle budget: the Porcupine SDK (~3.5MB WASM) is loaded via dynamic import
  * inside `startListening()`. It is NOT included in the main bundle.
@@ -26,7 +36,11 @@
  * Access key is read from import.meta.env.VITE_PICOVOICE_ACCESS_KEY.
  */
 
-import type { WakeWordService, WakeWordServiceConfig } from "./types";
+import {
+  WAKE_WORD_UNAVAILABLE_MESSAGE,
+  type WakeWordService,
+  type WakeWordServiceConfig,
+} from "./types";
 
 const CUSTOM_KEYWORD_PATH = "/porcupine/Hey-Seven_en_wasm_v4_0_0.ppn";
 const CUSTOM_KEYWORD_LABEL = "Hey Seven";
@@ -63,9 +77,9 @@ export class PorcupineWakeWordService implements WakeWordService {
       | undefined;
 
     if (!accessKey) {
-      config.onError(
-        "Picovoice access key missing. Set VITE_PICOVOICE_ACCESS_KEY in your environment."
-      );
+      // Missing env var — the user cannot fix this from the browser.
+      // Surface the stable unavailable signal so the provider halts retries.
+      config.onError(WAKE_WORD_UNAVAILABLE_MESSAGE);
       return;
     }
 
@@ -128,22 +142,27 @@ export class PorcupineWakeWordService implements WakeWordService {
         this.usingFallback = false;
         this.wakeWord = CUSTOM_KEYWORD_LABEL;
       } catch (customErr) {
+        // Check auth FIRST, before any logging. An expired/invalid key is
+        // a configuration state the user cannot fix in-browser; the
+        // built-in fallback would hit the same auth surface and also fail.
+        // Exit silently with the stable unavailable signal so the provider
+        // can degrade cleanly — no console noise for an expected state.
+        if (this.isAuthError(customErr)) {
+          config.onError(WAKE_WORD_UNAVAILABLE_MESSAGE);
+          this.state = "idle";
+          this.config = null;
+          return;
+        }
+
+        // Non-auth custom-keyword failure — e.g., missing .ppn file, CDN
+        // fetch error, corrupt model. The built-in "Computer" fallback may
+        // still work. Log once so operators can diagnose the root cause.
         // eslint-disable-next-line no-console
         console.warn(
           "[PorcupineWakeWordService] Custom 'Hey Seven' keyword failed to load, " +
             "falling back to built-in 'Computer'. Cause:",
           customErr
         );
-
-        // If it's an auth error, fallback will fail too — bail.
-        if (this.isAuthError(customErr)) {
-          config.onError(
-            "Invalid Picovoice access key. Please check VITE_PICOVOICE_ACCESS_KEY."
-          );
-          this.state = "idle";
-          this.config = null;
-          return;
-        }
 
         try {
           worker = (await PorcupineWorker.create(
@@ -156,6 +175,9 @@ export class PorcupineWakeWordService implements WakeWordService {
           this.usingFallback = true;
           this.wakeWord = FALLBACK_KEYWORD_LABEL;
         } catch (fallbackErr) {
+          // classifyError folds auth errors to WAKE_WORD_UNAVAILABLE_MESSAGE
+          // so if the fallback also fails on auth we still give the
+          // provider the correct non-retriable signal.
           config.onError(this.classifyError(fallbackErr));
           this.state = "idle";
           this.config = null;
@@ -261,7 +283,7 @@ export class PorcupineWakeWordService implements WakeWordService {
     const raw = err instanceof Error ? err.message : String(err ?? "Unknown");
 
     if (/access[_ ]?key|invalid|unauthor|403|401/i.test(raw)) {
-      return "Invalid Picovoice access key. Please check VITE_PICOVOICE_ACCESS_KEY.";
+      return WAKE_WORD_UNAVAILABLE_MESSAGE;
     }
     if (
       /permission|denied|notallowed|user ?gesture|secure ?context/i.test(raw)

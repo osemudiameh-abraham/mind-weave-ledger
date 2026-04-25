@@ -8,9 +8,10 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import type {
-  WakeWordService,
-  WakeWordServiceConfig,
+import {
+  WAKE_WORD_UNAVAILABLE_MESSAGE,
+  type WakeWordService,
+  type WakeWordServiceConfig,
 } from "@/services/wake-word/types";
 
 /**
@@ -18,7 +19,7 @@ import type {
  *
  * Owns the wake-word detection lifecycle for the entire app.
  *
- * Architecture reference: Seven Mynd Master Architecture v5.5, Section 4.4.
+ * Architecture reference: Seven Mynd Master Architecture v5.7, Section 4.4.
  *   - Wake word runs locally via Picovoice Porcupine WASM in a Web Worker.
  *   - Microphone is ONLY requested after the user explicitly enables Always
  *     Listening in Settings. Never on page load.
@@ -35,6 +36,16 @@ import type {
  * Error model: `error` carries a user-presentable string when initialisation
  * fails (invalid key, missing model, denied microphone). Settings.tsx renders
  * this directly; clearing the toggle clears the error.
+ *
+ * Graceful degrade (Phase 0.B Stage B3.1, Apr 23 2026):
+ *   When the service surfaces `WAKE_WORD_UNAVAILABLE_MESSAGE` — the stable
+ *   non-retriable signal for expired/missing Picovoice credentials — the
+ *   provider flips an internal `unavailableThisSession` flag via ref.
+ *   Subsequent effect runs short-circuit: `shouldRun` becomes false so we
+ *   do not re-initialise the service on every render. The flag is cleared
+ *   only when the user explicitly toggles Always Listening off (setEnabled
+ *   with false), giving them a manual reset path if Picovoice is restored.
+ *   Manual microphone control remains available throughout.
  */
 
 export interface AlwaysListeningState {
@@ -114,6 +125,11 @@ export const AlwaysListeningProvider = ({ children }: ProviderProps) => {
   // Tracks whether we're mid-startup to avoid duplicate starts when React
   // Strict Mode double-invokes effects in dev.
   const startingRef = useRef(false);
+  // Graceful-degrade guard: flipped true when the service reports
+  // WAKE_WORD_UNAVAILABLE_MESSAGE. Blocks automatic retry loops until the
+  // user toggles the feature off. Ref (not state) so writes from the
+  // onError callback do not trigger additional re-renders.
+  const unavailableRef = useRef(false);
 
   const setWakeWord = useCallback((word: string) => {
     setWakeWordState(word);
@@ -131,16 +147,23 @@ export const AlwaysListeningProvider = ({ children }: ProviderProps) => {
     } catch {
       /* ignore storage quota */
     }
-    // Clear any prior error when the user toggles state — they're starting over.
-    if (!val) setError(null);
+    // Toggle off is the user's manual reset: clear any prior error AND
+    // clear the unavailable guard so the next toggle-on attempt actually
+    // tries again (e.g., after Picovoice credentials are restored).
+    if (!val) {
+      setError(null);
+      unavailableRef.current = false;
+    }
   }, []);
 
   // ─── Lifecycle: start/stop the wake word service in response to state ───
   useEffect(() => {
     // Wake word should only run when:
     //   (a) user has explicitly enabled it, AND
-    //   (b) Live voice session is NOT currently holding the microphone.
-    const shouldRun = enabled && !isInLiveSession;
+    //   (b) Live voice session is NOT currently holding the microphone, AND
+    //   (c) the service is not known unavailable this session.
+    const shouldRun =
+      enabled && !isInLiveSession && !unavailableRef.current;
 
     if (shouldRun) {
       if (serviceRef.current || startingRef.current) return;
@@ -174,6 +197,12 @@ export const AlwaysListeningProvider = ({ children }: ProviderProps) => {
             onError: (msg) => {
               setError(msg);
               setIsListening(false);
+              // If this is the stable non-retriable signal, latch the guard
+              // so future effect runs do not re-attempt startup. The user
+              // can reset by toggling Always Listening off (see setEnabled).
+              if (msg === WAKE_WORD_UNAVAILABLE_MESSAGE) {
+                unavailableRef.current = true;
+              }
             },
             onListeningChange: (listening) => {
               setIsListening(listening);
