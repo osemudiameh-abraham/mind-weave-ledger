@@ -13,6 +13,7 @@ import SideMenu from "@/components/SideMenu";
 import { useSections } from "@/hooks/use-sections";
 import { useTrialStatus } from "@/hooks/use-trial-status";
 import TrialOfferDialog from "@/components/TrialOfferDialog";
+import { formatMessageTime } from "@/lib/format-message-time";
 import { useChat } from "@/hooks/use-chat";
 import { supabase } from "@/lib/supabase";
 import { Loader2, ArrowDown } from "lucide-react";
@@ -302,14 +303,29 @@ const Home = () => {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25 }}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                className={`group flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+                tabIndex={0}
               >
                 {msg.role === "user" ? (
-                  <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
-                    {msg.text}
-                  </div>
+                  <>
+                    <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
+                      {msg.text}
+                    </div>
+                    {/* Implicit timestamp — v5.7 §10.9 rule 5 + §10.5
+                        hover/long-press behaviour. Hidden by default,
+                        revealed on group-hover (desktop) or
+                        group-focus-within (mobile tap). */}
+                    {msg.createdAt ? (
+                      <div
+                        className="text-[11px] text-muted-foreground/70 mt-1 mr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                        aria-label={`Sent ${formatMessageTime(msg.createdAt)}`}
+                      >
+                        {formatMessageTime(msg.createdAt)}
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
-                  <TypewriterBubble text={msg.text} />
+                  <TypewriterBubble text={msg.text} createdAt={msg.createdAt} />
                 )}
               </motion.div>
             ))}
