@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import {
-  WAKE_WORD_UNAVAILABLE_MESSAGE,
+  isWakeWordSentinel,
   type WakeWordService,
   type WakeWordServiceConfig,
 } from "@/services/wake-word/types";
@@ -197,10 +197,14 @@ export const AlwaysListeningProvider = ({ children }: ProviderProps) => {
             onError: (msg) => {
               setError(msg);
               setIsListening(false);
-              // If this is the stable non-retriable signal, latch the guard
-              // so future effect runs do not re-attempt startup. The user
-              // can reset by toggling Always Listening off (see setEnabled).
-              if (msg === WAKE_WORD_UNAVAILABLE_MESSAGE) {
+              // If this is a stable non-retriable signal, latch the
+              // guard so future effect runs do not re-attempt startup.
+              // The user can reset by toggling Always Listening off
+              // (see setEnabled). B3.7 extended this to all four
+              // sentinels (auth, mic-denied, model-failed, unknown);
+              // any non-recoverable wake-word state stops the retry
+              // loop until the user explicitly re-enables.
+              if (isWakeWordSentinel(msg)) {
                 unavailableRef.current = true;
               }
             },
