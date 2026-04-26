@@ -2507,48 +2507,124 @@ You are in a live voice conversation. The X.9 voice rules apply, with two adapta
               || (typeof titleRaw === "string" && titleRaw.trim())
               || "Reminder";
 
-            const { data: remRow, error: remErr } = await supabase
-              .from("reminders")
-              .insert({
-                user_id: user.id,
-                text_snapshot: textSnapshot,
-                original_message: message,
-                trigger_at_utc: triggerAtUtcRaw,
-                user_timezone: userTimezone,
-                user_local_display: userLocalDisplay,
-                pre_reminders: preReminders,
-                importance,
-                channels,
-                section_id: convoId,
-                source_pending_action_id: activePending.id,
-                source: metadata?.source === "voice" ? "voice" : "chat",
-              })
-              .select("id")
-              .single();
+            // ─── B3.3: INSERT-time dedup ───
+            // The Apr 23 backfill incident showed that identical user
+            // intents within minutes of each other produced duplicate
+            // reminder rows (3 identical Lagos flight reminders for the
+            // same user). At scale this becomes "user gets 3 toasts
+            // when they should get 1".
+            //
+            // A new reminder is a duplicate of an existing scheduled
+            // reminder when ALL of:
+            //   1. Same user_id
+            //   2. trigger_at_utc within ±2 minutes
+            //   3. text_snapshot, after normalisation, exactly equal
+            //   4. existing row has status='scheduled' (already-delivered
+            //      or cancelled reminders are NOT duplicates — user is
+            //      free to schedule a fresh reminder with same text/time)
+            //
+            // Normalisation: lowercase, replace non-alphanumeric with
+            // space, collapse whitespace. Catches casing/punctuation
+            // drift observed in the Apr 23 incident.
+            //
+            // Tight ±2min window deliberately keeps "two distinct
+            // reminders close in time" (e.g. 09:00 and 09:04 review
+            // checkpoints) as separate inserts. Wider windows risk
+            // false-positive merges.
+            //
+            // Fail-open on dedup query error: a duplicate is a UX blemish;
+            // a FAILED reminder when the user explicitly approved one is
+            // worse. Log and proceed with INSERT.
+            const normalisedNew = textSnapshot
+              .toLowerCase()
+              .replace(/[^a-z0-9 ]+/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
 
-            if (remErr) {
-              console.error("[REMINDER] Insert failed:", remErr.message);
-              executionResult = `Failed to set reminder: ${remErr.message}`;
-            } else {
-              console.log(`[REMINDER] Set id=${remRow?.id} trigger=${triggerAtUtcRaw} importance=${importance} pre_reminders=${JSON.stringify(preReminders)} channels=${JSON.stringify(channels)}`);
+            let dedupedAgainstId: string | null = null;
+            if (normalisedNew.length > 0) {
+              const windowStart = new Date(triggerMs - 2 * 60 * 1000).toISOString();
+              const windowEnd = new Date(triggerMs + 2 * 60 * 1000).toISOString();
 
-              // Mirror to memories_structured so Seven can reference this
-              // reminder in future conversations. Best-effort; a failure here
-              // does NOT fail the user-visible action.
-              try {
-                await supabase.from("memories_structured").insert({
-                  user_id: user.id,
-                  text: `Reminder set: ${textSnapshot}${userLocalDisplay ? ` (for ${userLocalDisplay})` : ""}`,
-                  memory_type: "reminder",
-                  importance: importance === "important" ? 8 : 6,
-                  source_message_id: activePending.id,
-                });
-              } catch (mirrorErr) {
-                console.warn("[REMINDER] Memory mirror failed (non-fatal):", (mirrorErr as Error).message);
+              const { data: dupCandidates, error: dupErr } = await supabase
+                .from("reminders")
+                .select("id, text_snapshot, trigger_at_utc")
+                .eq("user_id", user.id)
+                .eq("status", "scheduled")
+                .gte("trigger_at_utc", windowStart)
+                .lte("trigger_at_utc", windowEnd)
+                .limit(10);
+
+              if (dupErr) {
+                console.warn(`[REMINDER_DEDUP] Query failed, proceeding with insert: ${dupErr.message}`);
+              } else if (dupCandidates && dupCandidates.length > 0) {
+                for (const candidate of dupCandidates) {
+                  const candidateNorm = (candidate.text_snapshot || "")
+                    .toLowerCase()
+                    .replace(/[^a-z0-9 ]+/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                  if (candidateNorm === normalisedNew) {
+                    dedupedAgainstId = candidate.id;
+                    break;
+                  }
+                }
               }
+            }
 
+            if (dedupedAgainstId) {
+              // Match found — skip INSERT entirely. The existing reminder
+              // row already had its memory mirrored when first created, so
+              // the memory mirror block is also skipped. User-visible
+              // message uses past tense to convey "this is already done"
+              // without crying duplicate.
+              console.log(`[REMINDER_DEDUP] Skipped duplicate insert for user=${user.id.slice(0, 8)}; matched existing id=${dedupedAgainstId}`);
               const whenLabel = userLocalDisplay || new Date(triggerMs).toISOString();
-              executionResult = `Reminder set for ${whenLabel}${importance === "important" ? " (marked important)" : ""}.`;
+              executionResult = `Reminder already set for ${whenLabel}${importance === "important" ? " (marked important)" : ""}.`;
+            } else {
+              const { data: remRow, error: remErr } = await supabase
+                .from("reminders")
+                .insert({
+                  user_id: user.id,
+                  text_snapshot: textSnapshot,
+                  original_message: message,
+                  trigger_at_utc: triggerAtUtcRaw,
+                  user_timezone: userTimezone,
+                  user_local_display: userLocalDisplay,
+                  pre_reminders: preReminders,
+                  importance,
+                  channels,
+                  section_id: convoId,
+                  source_pending_action_id: activePending.id,
+                  source: metadata?.source === "voice" ? "voice" : "chat",
+                })
+                .select("id")
+                .single();
+
+              if (remErr) {
+                console.error("[REMINDER] Insert failed:", remErr.message);
+                executionResult = `Failed to set reminder: ${remErr.message}`;
+              } else {
+                console.log(`[REMINDER] Set id=${remRow?.id} trigger=${triggerAtUtcRaw} importance=${importance} pre_reminders=${JSON.stringify(preReminders)} channels=${JSON.stringify(channels)}`);
+
+                // Mirror to memories_structured so Seven can reference this
+                // reminder in future conversations. Best-effort; a failure here
+                // does NOT fail the user-visible action.
+                try {
+                  await supabase.from("memories_structured").insert({
+                    user_id: user.id,
+                    text: `Reminder set: ${textSnapshot}${userLocalDisplay ? ` (for ${userLocalDisplay})` : ""}`,
+                    memory_type: "reminder",
+                    importance: importance === "important" ? 8 : 6,
+                    source_message_id: activePending.id,
+                  });
+                } catch (mirrorErr) {
+                  console.warn("[REMINDER] Memory mirror failed (non-fatal):", (mirrorErr as Error).message);
+                }
+
+                const whenLabel = userLocalDisplay || new Date(triggerMs).toISOString();
+                executionResult = `Reminder set for ${whenLabel}${importance === "important" ? " (marked important)" : ""}.`;
+              }
             }
           }
         } else if (actionType === "email") {
