@@ -38,6 +38,9 @@
 
 import {
   WAKE_WORD_UNAVAILABLE_MESSAGE,
+  WAKE_WORD_MIC_DENIED_MESSAGE,
+  WAKE_WORD_MODEL_FAILED_MESSAGE,
+  WAKE_WORD_UNKNOWN_ERROR_MESSAGE,
   type WakeWordService,
   type WakeWordServiceConfig,
 } from "./types";
@@ -118,9 +121,11 @@ export class PorcupineWakeWordService implements WakeWordService {
       };
 
       const processErrorCallback = (err: Error) => {
-        this.config?.onError(
-          err?.message ?? "Wake word worker encountered an error"
-        );
+        // Runtime worker errors (post-init) are delivered here. Without
+        // categorisation they leak hex-format Picovoice native stack
+        // frames straight to the user. Route through classifyError so
+        // they get a stable sentinel (B3.7).
+        this.config?.onError(this.classifyError(err));
       };
 
       let worker: InternalPorcupineWorker;
@@ -282,18 +287,44 @@ export class PorcupineWakeWordService implements WakeWordService {
   private classifyError(err: unknown): string {
     const raw = err instanceof Error ? err.message : String(err ?? "Unknown");
 
+    // Auth-error path (B3.1). Catches Picovoice access key
+    // expiration/invalidation and HTTP 401/403 from the validation call.
     if (/access[_ ]?key|invalid|unauthor|403|401/i.test(raw)) {
       return WAKE_WORD_UNAVAILABLE_MESSAGE;
     }
+
+    // Microphone permission denied (B3.7). Catches getUserMedia
+    // failures: user dismissed the prompt, secure-context violation,
+    // or call without user gesture.
     if (
       /permission|denied|notallowed|user ?gesture|secure ?context/i.test(raw)
     ) {
-      return "Microphone access denied. Please allow microphone access in your browser settings.";
+      return WAKE_WORD_MIC_DENIED_MESSAGE;
     }
+
+    // Model/keyword fetch failure (B3.7). Catches CDN issues, offline
+    // states, corporate firewall blocks on .ppn or .pv asset paths.
     if (/model|ppn|\.pv\b|fetch|load|404|network/i.test(raw)) {
-      return "Wake word model failed to load. Please check your connection and try again.";
+      return WAKE_WORD_MODEL_FAILED_MESSAGE;
     }
-    return raw;
+
+    // Picovoice native error format (B3.7). The SDK delivers some
+    // runtime failures as opaque stack frames like:
+    //   [0] d3ff828 00000136: e390eff
+    //   [1] d3ff828 00000136: 3a359e9
+    // Detect by the [N] prefix pattern AND a hex-only token of 6+ chars
+    // (defends against false-positives on user-facing prose that
+    // happens to contain bracketed numbers).
+    if (/\[\d+\][\s\S]*?\b[0-9a-f]{6,}\b/i.test(raw)) {
+      return WAKE_WORD_UNKNOWN_ERROR_MESSAGE;
+    }
+
+    // Last resort: any other uncategorised error. We DO NOT leak the
+    // raw err.message anymore (B3.7) — it has historically delivered
+    // hex stack frames and other implementation-detail leaks. Fall
+    // back to the unknown-error sentinel; the user gets a friendly
+    // message and can use the manual mic.
+    return WAKE_WORD_UNKNOWN_ERROR_MESSAGE;
   }
 }
 
