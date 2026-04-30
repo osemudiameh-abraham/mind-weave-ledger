@@ -350,6 +350,9 @@ async function firePreReminder(
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Phase 0.B Stage B3.4 (Apr 26 2026).
+// Phase 0.B Stage B3.4d (Apr 30 2026): added Authorization Bearer header
+// (Supabase JWT gate rejected the original x-cron-secret-only call with
+// HTTP 401 UNAUTHORIZED_NO_AUTH_HEADER before notify's code even ran).
 //
 // Called after a notifications row INSERT succeeds. Checks if the user
 // opted into the push channel via reminder.channels[]. If yes, fires an
@@ -360,10 +363,20 @@ async function firePreReminder(
 // primary delivery channel. The in-app Realtime toast already fired via
 // the notifications row. If push fails, users with sevenmynd.com open
 // in a tab still see the toast; users with the tab closed simply miss
-// this one push. Cron tick success is unaffected.
+// this one push.
 //
-// Auth: x-cron-secret header validated by notify. Same secret used by
-// pg_cron to invoke reminders-fire. One env var (CRON_SECRET) reused.
+// Failures (post-B3.4d): logged at console.error level with full context
+// for observability. Cron tick summary does NOT count these — by the
+// time the fetch resolves, the response has already been sent. Tracked
+// as audit-entry #7 follow-up: a future change should convert this to
+// awaited-with-timeout if accurate accounting becomes important.
+//
+// Auth (B3.4d): two-layer.
+//   1. Supabase JWT gate — passed via Authorization: Bearer <SERVICE_ROLE_KEY>
+//   2. notify's app-level cron-caller check — passed via x-cron-secret
+// Both must succeed. Authorization passes the Supabase gateway;
+// x-cron-secret distinguishes cron-originated calls from user-originated
+// (so notify can target arbitrary users instead of being scoped to caller).
 
 function dispatchPushIfRequested(
   r: ReminderRow,
@@ -377,11 +390,13 @@ function dispatchPushIfRequested(
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const cronSecret = Deno.env.get("CRON_SECRET");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!supabaseUrl || !cronSecret) {
-    console.warn(
-      `[REMINDERS_FIRE] Push dispatch skipped (missing SUPABASE_URL or CRON_SECRET) ` +
-      `for reminder=${r.id}`,
+  if (!supabaseUrl || !cronSecret || !serviceRoleKey) {
+    console.error(
+      `[REMINDERS_FIRE] Push dispatch SKIPPED (missing SUPABASE_URL, CRON_SECRET, or SERVICE_ROLE_KEY) ` +
+      `for reminder=${r.id}. This is a configuration error — push will silently not fire ` +
+      `until env vars are set.`,
     );
     return;
   }
@@ -397,24 +412,33 @@ function dispatchPushIfRequested(
     silent: r.importance !== "important",
   };
 
-  // Fire-and-forget. Return value not awaited; errors logged but do not
-  // affect cron tick accounting. Wrapped in a Promise.resolve().then to
-  // ensure the fetch is initiated (otherwise an unawaited fetch can be
-  // dropped by some runtimes).
+  // Fire-and-forget at the call-site level (no await). The inner promise
+  // logs success/failure but does NOT mutate the cron tick's accounting
+  // (the response has already been sent by the time the fetch resolves).
+  // Wrapped in Promise.resolve().then to ensure the fetch is initiated
+  // (otherwise an unawaited fetch can be dropped by some runtimes).
   Promise.resolve().then(async () => {
     try {
       const res = await fetch(notifyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // Authorization: Supabase JWT gateway rejects requests without
+          // this header before our code even runs (HTTP 401
+          // UNAUTHORIZED_NO_AUTH_HEADER). Using the service role key
+          // proves "this is a project insider" to the gateway.
+          "Authorization": `Bearer ${serviceRoleKey}`,
+          // x-cron-secret: notify's app-level check that distinguishes
+          // cron-originated calls (can target any user) from
+          // user-originated calls (scoped to caller). Defense in depth.
           "x-cron-secret": cronSecret,
         },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
-        console.warn(
-          `[REMINDERS_FIRE] Push dispatch returned ${res.status} for reminder=${r.id}: ` +
+        console.error(
+          `[REMINDERS_FIRE] Push dispatch FAILED ${res.status} for reminder=${r.id}: ` +
           `${errText.slice(0, 200)}`,
         );
       } else {
@@ -425,8 +449,8 @@ function dispatchPushIfRequested(
         );
       }
     } catch (err) {
-      console.warn(
-        `[REMINDERS_FIRE] Push dispatch threw for reminder=${r.id}: ` +
+      console.error(
+        `[REMINDERS_FIRE] Push dispatch THREW for reminder=${r.id}: ` +
         `${err instanceof Error ? err.message : String(err)}`,
       );
     }
