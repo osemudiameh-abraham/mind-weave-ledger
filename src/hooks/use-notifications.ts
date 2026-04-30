@@ -109,6 +109,11 @@ export function useNotifications(): UseNotificationsApi {
   /**
    * Internal: subscribe to push and store the subscription. Returns
    * the result so requestPermission can surface it to callers.
+   *
+   * Critical: returns 'subscribe_failed' if persistSubscription returns
+   * false. The previous version returned 'granted_subscribed'
+   * unconditionally, which caused the toggle to claim success even when
+   * the DB upsert silently failed (RLS, no session, etc).
    */
   const subscribeToPush = useCallback(async (): Promise<RequestPermissionResult> => {
     try {
@@ -122,7 +127,11 @@ export function useNotifications(): UseNotificationsApi {
       const existing = await registration.pushManager.getSubscription();
       if (existing) {
         // Already subscribed — make sure DB has the row (idempotent)
-        await persistSubscription(existing);
+        const ok = await persistSubscription(existing);
+        if (!ok) {
+          console.error("[NOTIFICATIONS] Existing subscription found but DB persist failed");
+          return "subscribe_failed";
+        }
         setState((prev) => ({ ...prev, pushSubscribed: true }));
         return "granted_subscribed";
       }
@@ -132,7 +141,16 @@ export function useNotifications(): UseNotificationsApi {
         applicationServerKey: urlBase64ToUint8Array(vapidKey),
       });
 
-      await persistSubscription(subscription);
+      const persisted = await persistSubscription(subscription);
+      if (!persisted) {
+        // pushManager.subscribe succeeded but DB persistence failed.
+        // The browser now holds a subscription that the server doesn't
+        // know about — push from notify won't reach the user. Surface
+        // this as subscribe_failed so the UI can warn instead of
+        // falsely reporting success.
+        console.error("[NOTIFICATIONS] Browser subscribed but DB persistence failed — bailing out");
+        return "subscribe_failed";
+      }
       setState((prev) => ({ ...prev, pushSubscribed: true }));
       console.log("[NOTIFICATIONS] Push subscription stored");
       return "granted_subscribed";
@@ -292,18 +310,51 @@ export function useNotifications(): UseNotificationsApi {
  * Persist a PushSubscription to the notification_subscriptions table.
  * Idempotent via upsert on (user_id, endpoint). Helper extracted so
  * subscribe and re-affirm flows share the same code path.
+ *
+ * Returns true on confirmed write, false on any failure (no session,
+ * upsert error, RLS rejection). Callers MUST check the return value
+ * — a silent void return previously caused B3.4b's first deploy to
+ * report "subscribed" while leaving the DB empty.
  */
-async function persistSubscription(subscription: PushSubscription): Promise<void> {
+async function persistSubscription(subscription: PushSubscription): Promise<boolean> {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) return;
+  if (!session?.user) {
+    console.error("[NOTIFICATIONS] persistSubscription: no session (upsert skipped)");
+    return false;
+  }
 
   const subJson = subscription.toJSON();
-  await supabase.from("notification_subscriptions").upsert({
-    user_id: session.user.id,
-    endpoint: subJson.endpoint!,
-    p256dh: subJson.keys!.p256dh!,
-    auth_key: subJson.keys!.auth!,
-  }, { onConflict: "user_id,endpoint" });
+  const { error, data } = await supabase
+    .from("notification_subscriptions")
+    .upsert({
+      user_id: session.user.id,
+      endpoint: subJson.endpoint!,
+      p256dh: subJson.keys!.p256dh!,
+      auth_key: subJson.keys!.auth!,
+    }, { onConflict: "user_id,endpoint" })
+    .select();
+
+  if (error) {
+    console.error("[NOTIFICATIONS] notification_subscriptions upsert failed:", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    return false;
+  }
+
+  // .select() guarantees data is the inserted/updated rows. If RLS
+  // silently dropped the row (PostgREST behaviour: 2xx returned but
+  // no rows in response), data will be empty and we surface that
+  // failure rather than report success.
+  if (!data || data.length === 0) {
+    console.error("[NOTIFICATIONS] notification_subscriptions upsert returned no rows — likely RLS blocked");
+    return false;
+  }
+
+  console.log("[NOTIFICATIONS] notification_subscriptions row persisted, id=", data[0]?.id);
+  return true;
 }
 
 /**
