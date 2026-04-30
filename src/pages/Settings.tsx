@@ -265,16 +265,33 @@ const Settings = () => {
     toast(`Theme set to ${mode}`);
   };
 
-  const handleGmailToggle = () => {
+  const handleGmailToggle = async () => {
     if (gmailConnected) {
-      // Disconnect: remove oauth token
-      if (user) {
-        supabase.from("oauth_tokens").delete().eq("user_id", user.id).eq("provider", "gmail")
-          .then(() => {
-            setGmailConnected(false);
-            toast("Gmail disconnected");
-          });
+      // Disconnect: remove oauth token. Audit-fix A2 (Apr 30 2026):
+      // previously this was fire-and-forget via .then() — UI showed
+      // "Gmail disconnected" toast and toggle went off, but the OAuth
+      // token might still be in the DB. Architecture §12 governance
+      // hard rule #3 says revocation must be immediate and total. This
+      // patch awaits + checks the error and only updates UI on
+      // confirmed delete.
+      if (!user) return;
+
+      const { error } = await supabase
+        .from("oauth_tokens")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("provider", "gmail");
+
+      if (error) {
+        console.error("[SETTINGS] Gmail disconnect failed:", error);
+        toast.error(
+          "Couldn't disconnect Gmail. Please try again or contact support — your token may still be active.",
+        );
+        return; // Do NOT update UI; the token is still in the DB.
       }
+
+      setGmailConnected(false);
+      toast("Gmail disconnected");
     } else {
       // Connect: OAuth flow placeholder — will be wired in GEL phase
       setGmailConnecting(true);
