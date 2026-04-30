@@ -1,11 +1,19 @@
 /**
- * Notification hook — Architecture v5.5, Section 10.7
+ * Notification hook — Architecture v5.7, Section 11.B
+ *
+ * Phase 0.B Stage B3.4b (Apr 28 2026)
  *
  * Registers service worker, requests notification permission,
  * subscribes to push (when VAPID key configured), and polls for
  * due notifications (decision reviews, pattern warnings).
  *
- * Notification types:
+ * v3 (B3.4b) adds:
+ *  - unsubscribe() function: symmetric off path that unsubscribes
+ *    browser-side AND deletes the row from notification_subscriptions
+ *  - pushSubscribed exported as a real boolean reflecting browser state
+ *  - subscribeToPush returns success/failure so callers can react
+ *
+ * Notification types (preserved from v5.5):
  * 1. Decision review due (high priority)
  * 2. Pattern warning (medium priority)
  * 3. Weekly digest (low priority)
@@ -26,7 +34,38 @@ interface NotificationState {
   dueReviews: number;
 }
 
-export function useNotifications() {
+export type RequestPermissionResult =
+  | "granted_subscribed"      // Permission granted AND push subscription stored
+  | "granted_no_push"         // Permission granted but VAPID not configured (in-app polling only)
+  | "denied"                  // User denied the permission prompt
+  | "default"                 // User dismissed the prompt without choosing
+  | "unsupported"             // Browser doesn't support Notification API
+  | "subscribe_failed";       // Permission granted but pushManager.subscribe threw
+
+export interface UseNotificationsApi {
+  permission: NotificationPermission | "unsupported";
+  pushSubscribed: boolean;
+  dueReviews: number;
+  /**
+   * Triggers the browser permission prompt (must be from a direct user
+   * gesture). On grant, also subscribes to push and stores the subscription
+   * in notification_subscriptions. Returns a discriminated result so
+   * callers can render the right UX feedback.
+   */
+  requestPermission: () => Promise<RequestPermissionResult>;
+  /**
+   * Unsubscribes from push (browser-side) and deletes the matching row
+   * from notification_subscriptions. Idempotent: returns true even if
+   * there was nothing to unsubscribe.
+   *
+   * Does NOT revoke the browser permission itself — only the user can
+   * do that via browser settings. Re-subscribing later still works
+   * without re-prompting if the permission is still granted.
+   */
+  unsubscribe: () => Promise<boolean>;
+}
+
+export function useNotifications(): UseNotificationsApi {
   const [state, setState] = useState<NotificationState>({
     permission: typeof Notification !== "undefined" ? Notification.permission : "unsupported",
     pushSubscribed: false,
@@ -36,7 +75,7 @@ export function useNotifications() {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastNotifiedRef = useRef<Set<string>>(new Set());
 
-  // Register service worker
+  // Register service worker on mount
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch((err) => {
@@ -45,31 +84,47 @@ export function useNotifications() {
     }
   }, []);
 
-  // Request permission — must be called from a direct user gesture (tap/click)
-  const requestPermission = useCallback(async () => {
-    if (typeof Notification === "undefined") return;
-    const result = await Notification.requestPermission();
-    setState((prev) => ({ ...prev, permission: result }));
-
-    if (result === "granted") {
-      await subscribeToPush();
-    }
+  // Initial subscription state probe — on mount, check whether the user
+  // already has a live push subscription. This lets the Settings toggle
+  // accurately reflect actual browser state on page load (otherwise it
+  // would always start as "not subscribed" until the user clicks).
+  useEffect(() => {
+    const probe = async () => {
+      if (!("serviceWorker" in navigator) || typeof Notification === "undefined") return;
+      if (Notification.permission !== "granted") return;
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const existing = await registration.pushManager.getSubscription();
+        setState((prev) => ({ ...prev, pushSubscribed: !!existing }));
+      } catch (err) {
+        // Probe failures are non-fatal — they just mean the toggle starts
+        // as "not subscribed" until the user interacts. Don't surface to
+        // user; log only.
+        console.warn("[NOTIFICATIONS] Subscription probe failed:", err);
+      }
+    };
+    probe();
   }, []);
 
-  // Subscribe to web push (requires VAPID_PUBLIC_KEY env var)
-  const subscribeToPush = useCallback(async () => {
+  /**
+   * Internal: subscribe to push and store the subscription. Returns
+   * the result so requestPermission can surface it to callers.
+   */
+  const subscribeToPush = useCallback(async (): Promise<RequestPermissionResult> => {
     try {
       const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
       if (!vapidKey) {
         console.log("[NOTIFICATIONS] No VAPID key configured — push disabled, polling only");
-        return;
+        return "granted_no_push";
       }
 
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
       if (existing) {
+        // Already subscribed — make sure DB has the row (idempotent)
+        await persistSubscription(existing);
         setState((prev) => ({ ...prev, pushSubscribed: true }));
-        return;
+        return "granted_subscribed";
       }
 
       const subscription = await registration.pushManager.subscribe({
@@ -77,22 +132,81 @@ export function useNotifications() {
         applicationServerKey: urlBase64ToUint8Array(vapidKey),
       });
 
-      // Store subscription in Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
-
-      const subJson = subscription.toJSON();
-      await supabase.from("notification_subscriptions").upsert({
-        user_id: session.user.id,
-        endpoint: subJson.endpoint!,
-        p256dh: subJson.keys!.p256dh!,
-        auth_key: subJson.keys!.auth!,
-      }, { onConflict: "user_id,endpoint" });
-
+      await persistSubscription(subscription);
       setState((prev) => ({ ...prev, pushSubscribed: true }));
       console.log("[NOTIFICATIONS] Push subscription stored");
+      return "granted_subscribed";
     } catch (err) {
       console.error("[NOTIFICATIONS] Push subscription failed:", err);
+      return "subscribe_failed";
+    }
+  }, []);
+
+  /**
+   * Public: request permission AND subscribe to push. Must be called
+   * from a direct user gesture (tap/click) — otherwise the browser
+   * silently rejects the requestPermission call.
+   */
+  const requestPermission = useCallback(async (): Promise<RequestPermissionResult> => {
+    if (typeof Notification === "undefined") {
+      return "unsupported";
+    }
+
+    let result: NotificationPermission;
+    try {
+      result = await Notification.requestPermission();
+    } catch (err) {
+      console.error("[NOTIFICATIONS] requestPermission threw:", err);
+      return "denied";
+    }
+
+    setState((prev) => ({ ...prev, permission: result }));
+
+    if (result === "granted") {
+      return await subscribeToPush();
+    }
+    if (result === "denied") return "denied";
+    return "default";
+  }, [subscribeToPush]);
+
+  /**
+   * Public: unsubscribe from push and clear the DB row. Symmetric off
+   * path. Browser permission itself stays granted — only the
+   * subscription is removed.
+   */
+  const unsubscribe = useCallback(async (): Promise<boolean> => {
+    try {
+      // Browser-side unsubscribe
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        const existing = await registration.pushManager.getSubscription();
+        if (existing) {
+          const endpoint = existing.endpoint;
+          await existing.unsubscribe();
+
+          // DB-side cleanup — match by endpoint within the user's rows
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            await supabase
+              .from("notification_subscriptions")
+              .delete()
+              .eq("user_id", session.user.id)
+              .eq("endpoint", endpoint);
+          }
+        }
+      }
+      setState((prev) => ({ ...prev, pushSubscribed: false }));
+      console.log("[NOTIFICATIONS] Unsubscribed from push");
+      return true;
+    } catch (err) {
+      console.error("[NOTIFICATIONS] Unsubscribe failed:", err);
+      // Even on failure, mark local state as unsubscribed — user
+      // toggled OFF, so the UI should reflect that intent. The DB
+      // row may linger and get cleaned up later via the 410-Gone
+      // response when notify tries to send (notify v2 handles that
+      // path: it deletes the row on 410).
+      setState((prev) => ({ ...prev, pushSubscribed: false }));
+      return false;
     }
   }, []);
 
@@ -166,12 +280,36 @@ export function useNotifications() {
   }, []);
 
   return {
-    ...state,
+    permission: state.permission,
+    pushSubscribed: state.pushSubscribed,
+    dueReviews: state.dueReviews,
     requestPermission,
+    unsubscribe,
   };
 }
 
-// Utility: convert base64 VAPID key to Uint8Array for pushManager.subscribe
+/**
+ * Persist a PushSubscription to the notification_subscriptions table.
+ * Idempotent via upsert on (user_id, endpoint). Helper extracted so
+ * subscribe and re-affirm flows share the same code path.
+ */
+async function persistSubscription(subscription: PushSubscription): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return;
+
+  const subJson = subscription.toJSON();
+  await supabase.from("notification_subscriptions").upsert({
+    user_id: session.user.id,
+    endpoint: subJson.endpoint!,
+    p256dh: subJson.keys!.p256dh!,
+    auth_key: subJson.keys!.auth!,
+  }, { onConflict: "user_id,endpoint" });
+}
+
+/**
+ * Convert a base64url-encoded VAPID public key to the Uint8Array
+ * format expected by pushManager.subscribe's applicationServerKey.
+ */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
