@@ -276,14 +276,23 @@ export function useNotifications(): UseNotificationsApi {
             });
           }
 
-          // Log it
-          await supabase.from("notification_log").insert({
-            user_id: session.user.id,
-            type: "decision_review",
-            channel: "push",
-            sent_at: new Date().toISOString(),
-            delivered_at: new Date().toISOString(),
-          });
+          // Log it. Audit-fix A6 (Apr 30 2026): previously this insert
+          // had no error capture. If it failed, the daily-cap counter
+          // (which queries notification_log) wouldn't see this notification,
+          // so the user could end up receiving more than the 3/day cap
+          // promised in the architecture. Now we log failures.
+          const { error: logErr } = await supabase
+            .from("notification_log")
+            .insert({
+              user_id: session.user.id,
+              type: "decision_review",
+              channel: "push",
+              sent_at: new Date().toISOString(),
+              delivered_at: new Date().toISOString(),
+            });
+          if (logErr) {
+            console.error("[NOTIFICATIONS] notification_log insert failed:", logErr);
+          }
         }
       }
     };
