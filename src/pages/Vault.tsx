@@ -92,11 +92,24 @@ const Vault = () => {
     if (!user || !editValue.trim()) return;
     if (!checkEditLimit()) return;
 
-    // Supersede the old fact
-    await supabase.from("memory_facts").update({
-      valid_until: new Date().toISOString(),
-      status: "superseded",
-    }).eq("id", fact.id);
+    // Supersede the old fact. Audit-fix A3 (Apr 30 2026): previously
+    // this update was silent (no error capture). If it failed, the
+    // insert below would still run and we'd end up with TWO active
+    // facts for the same canonical_text — violating the canonical-truth
+    // invariant (Architecture §6). Now we capture and abort.
+    const { error: supersedeErr } = await supabase
+      .from("memory_facts")
+      .update({
+        valid_until: new Date().toISOString(),
+        status: "superseded",
+      })
+      .eq("id", fact.id);
+
+    if (supersedeErr) {
+      console.error("[VAULT] Supersession failed:", supersedeErr);
+      toast.error("Couldn't update the fact. Please try again.");
+      return;
+    }
 
     // Insert corrected fact
     const factKey = `${fact.subject.toLowerCase().trim()}::${fact.attribute.toLowerCase().trim()}`;
@@ -116,6 +129,7 @@ const Vault = () => {
     });
 
     if (error) {
+      console.error("[VAULT] Corrected-fact insert failed:", error);
       toast.error("Failed to save correction");
     } else {
       toast.success("Fact corrected");
