@@ -1,0 +1,36 @@
+# Supabase project configuration
+# ============================================================
+# Phase 0.B Stage B3.4d-2 (Apr 30 2026)
+#
+# This file declares per-function settings for the Supabase platform.
+# CLI deploys (`supabase functions deploy`) read this file. Dashboard
+# (Monaco) deploys may set the same flag via the per-function "Verify
+# JWT with legacy secret" toggle — both surfaces should agree.
+#
+# Why this file exists:
+#   This project was migrated to Supabase's new sb_secret_xxx API key
+#   system. The new keys are NOT JWTs. The Edge Function gateway's
+#   default verify_jwt=true can only validate user-session JWTs (issued
+#   by Supabase Auth on user login), not API keys. This means
+#   service-to-service calls — including cron-fired calls from one
+#   Edge Function to another — cannot be authenticated at the gateway
+#   layer when this project key system is active.
+#
+# Per Supabase docs (https://supabase.com/docs/guides/functions/auth):
+#   "Cron jobs, workers, pg_net, or another Edge Functions make calls
+#    with a secret key on the apikey header. These callers don't send
+#    a user JWT, so disable verify_jwt and validate the key yourself."
+#
+# Functions affected by this rule:
+#   - notify: called by reminders-fire (an Edge Function) on every
+#     pg_cron tick to dispatch push notifications. Must accept calls
+#     without a user-session JWT. The function's own handler validates
+#     the caller via the x-cron-secret header (see notify/index.ts:71).
+#
+# Functions NOT in this list keep verify_jwt=true (the default). They
+# are only invoked from the frontend via supabase.functions.invoke()
+# which automatically attaches the user's session JWT to the
+# Authorization header.
+
+[functions.notify]
+verify_jwt = false
