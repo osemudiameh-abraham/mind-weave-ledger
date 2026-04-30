@@ -226,6 +226,13 @@ async function fireMainReminder(
     `[REMINDERS_FIRE] Fired main reminder=${r.id} user=${r.user_id.slice(0, 8)} ` +
     `text="${r.text_snapshot.slice(0, 50)}" importance=${r.importance}`,
   );
+
+  // 3. Dispatch push notification if the user opted into the push channel.
+  //    Fire-and-forget — push failure does NOT affect the cron tick's
+  //    success accounting (the in-app Realtime toast already fired via
+  //    the notifications row INSERT above). Push is bonus reach.
+  dispatchPushIfRequested(r, "reminder", formatMainTitle(r), r.text_snapshot);
+
   return true;
 }
 
@@ -324,7 +331,106 @@ async function firePreReminder(
     `[REMINDERS_FIRE] Fired pre-reminder=${r.id} lead=${leadMinutes}m user=${r.user_id.slice(0, 8)} ` +
     `text="${r.text_snapshot.slice(0, 50)}"`,
   );
+
+  // Dispatch push for this pre-reminder if user opted into push channel.
+  // Fire-and-forget; same rationale as main fire (in-app toast is the
+  // primary surface, push is the additional reach for closed tabs).
+  dispatchPushIfRequested(
+    r,
+    "pre_reminder",
+    formatPreTitle(r, leadMinutes),
+    r.text_snapshot,
+  );
+
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Push dispatch helper — fire-and-forget call to the notify Edge Function
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Phase 0.B Stage B3.4 (Apr 26 2026).
+//
+// Called after a notifications row INSERT succeeds. Checks if the user
+// opted into the push channel via reminder.channels[]. If yes, fires an
+// HTTP POST to the notify Edge Function which handles VAPID auth + RFC
+// 8291 encryption + Web Push delivery.
+//
+// Fire-and-forget by design: push delivery is bonus reach, not the
+// primary delivery channel. The in-app Realtime toast already fired via
+// the notifications row. If push fails, users with sevenmynd.com open
+// in a tab still see the toast; users with the tab closed simply miss
+// this one push. Cron tick success is unaffected.
+//
+// Auth: x-cron-secret header validated by notify. Same secret used by
+// pg_cron to invoke reminders-fire. One env var (CRON_SECRET) reused.
+
+function dispatchPushIfRequested(
+  r: ReminderRow,
+  notificationType: "reminder" | "pre_reminder",
+  title: string,
+  body: string,
+): void {
+  if (!r.channels || !r.channels.includes("push")) {
+    return;
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const cronSecret = Deno.env.get("CRON_SECRET");
+
+  if (!supabaseUrl || !cronSecret) {
+    console.warn(
+      `[REMINDERS_FIRE] Push dispatch skipped (missing SUPABASE_URL or CRON_SECRET) ` +
+      `for reminder=${r.id}`,
+    );
+    return;
+  }
+
+  const notifyUrl = `${supabaseUrl}/functions/v1/notify`;
+  const payload = {
+    user_id: r.user_id,
+    notification_type: notificationType,
+    title,
+    body,
+    url: "/home",
+    tag: `seven-${notificationType}-${r.id}`,
+    silent: r.importance !== "important",
+  };
+
+  // Fire-and-forget. Return value not awaited; errors logged but do not
+  // affect cron tick accounting. Wrapped in a Promise.resolve().then to
+  // ensure the fetch is initiated (otherwise an unawaited fetch can be
+  // dropped by some runtimes).
+  Promise.resolve().then(async () => {
+    try {
+      const res = await fetch(notifyUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-cron-secret": cronSecret,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.warn(
+          `[REMINDERS_FIRE] Push dispatch returned ${res.status} for reminder=${r.id}: ` +
+          `${errText.slice(0, 200)}`,
+        );
+      } else {
+        const result = await res.json().catch(() => ({}));
+        console.log(
+          `[REMINDERS_FIRE] Push dispatched reminder=${r.id} type=${notificationType} ` +
+          `result=${JSON.stringify(result)}`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[REMINDERS_FIRE] Push dispatch threw for reminder=${r.id}: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
