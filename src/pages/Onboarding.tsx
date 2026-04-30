@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Check, Mic, ShieldCheck, Lock, EyeOff, BanIcon, Smartphone, MessageSquare, Mail, Activity, Brain, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 import SevenLogo from "@/components/SevenLogo";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -24,6 +25,8 @@ const Onboarding = () => {
   const toggle = (arr: string[], val: string, setter: (v: string[]) => void) =>
     setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
 
+  const [submitting, setSubmitting] = useState(false);
+
   const next = async () => {
     if (step === 1 && name.trim()) {
       localStorage.setItem("seven_user_name", name.trim());
@@ -32,19 +35,55 @@ const Onboarding = () => {
     if (step === 5 && safeWord.trim()) {
       localStorage.setItem("seven_safe_word", safeWord.trim());
     }
-    if (step < totalSteps) setStep(step + 1);
-    else {
-      // Save all onboarding data to Supabase
+    if (step < totalSteps) {
+      setStep(step + 1);
+      return;
+    }
+
+    // Final step: save onboarding data to Supabase. Audit-fix A1 (Apr 30 2026):
+    // previously this was fire-and-forget — if the update silently failed,
+    // user landed on /home with empty profile and no way to redo onboarding.
+    // Now we await + check error, abort the navigation if it fails, and
+    // surface the failure so the user can retry.
+    if (submitting) return;
+    setSubmitting(true);
+
+    try {
       if (user) {
-        supabase.from("identity_profiles").update({
-          self_name: name.trim() || undefined,
-          goals: goals,
-          focus_areas: selected,
-          safe_word: safeWord.trim() || undefined,
-        }).eq("user_id", user.id);
+        const { error: profileErr } = await supabase
+          .from("identity_profiles")
+          .update({
+            self_name: name.trim() || undefined,
+            goals: goals,
+            focus_areas: selected,
+            safe_word: safeWord.trim() || undefined,
+          })
+          .eq("user_id", user.id);
+
+        if (profileErr) {
+          console.error("[ONBOARDING] identity_profiles update failed:", profileErr);
+          toast.error("Couldn't save your details. Please check your connection and try again.");
+          setSubmitting(false);
+          return;
+        }
       }
-      completeOnboarding().catch(() => {});
+
+      // Mark onboarding complete only AFTER profile data is saved.
+      // If this fails the user can retry without losing data.
+      try {
+        await completeOnboarding();
+      } catch (completeErr) {
+        console.error("[ONBOARDING] completeOnboarding failed:", completeErr);
+        toast.error("Couldn't finalise onboarding. Your details were saved — please retry.");
+        setSubmitting(false);
+        return;
+      }
+
       navigate("/home", { replace: true });
+    } catch (err) {
+      console.error("[ONBOARDING] Unexpected error during finalisation:", err);
+      toast.error("Something went wrong. Please try again.");
+      setSubmitting(false);
     }
   };
   const back = () => step > 0 && setStep(step - 1);
