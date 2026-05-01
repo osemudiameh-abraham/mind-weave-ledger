@@ -224,7 +224,7 @@ async function fireMainReminder(
 
   console.log(
     `[REMINDERS_FIRE] Fired main reminder=${r.id} user=${r.user_id.slice(0, 8)} ` +
-    `text="${r.text_snapshot.slice(0, 50)}" importance=${r.importance}`,
+    `text_len=${r.text_snapshot.length} importance=${r.importance}`,
   );
 
   // 3. Dispatch push notification if the user opted into the push channel.
@@ -329,7 +329,7 @@ async function firePreReminder(
 
   console.log(
     `[REMINDERS_FIRE] Fired pre-reminder=${r.id} lead=${leadMinutes}m user=${r.user_id.slice(0, 8)} ` +
-    `text="${r.text_snapshot.slice(0, 50)}"`,
+    `text_len=${r.text_snapshot.length}`,
   );
 
   // Dispatch push for this pre-reminder if user opted into push channel.
@@ -350,6 +350,17 @@ async function firePreReminder(
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Phase 0.B Stage B3.4 (Apr 26 2026).
+// Phase 0.B Stage B3.4d (Apr 30 2026): added Authorization Bearer header
+//   (Supabase JWT gate rejected the original x-cron-secret-only call with
+//   HTTP 401 UNAUTHORIZED_NO_AUTH_HEADER before notify's code even ran).
+// Phase 0.B Stage B3.4d-2 (Apr 30 2026): replaced Bearer auth pattern with
+//   the architecturally-correct one for the new Supabase API key system.
+//   The B3.4d Bearer attempt was rejected with UNAUTHORIZED_INVALID_JWT_FORMAT
+//   because this project is migrated to sb_secret_xxx keys which are NOT
+//   JWTs — the gateway can't validate them. Per Supabase docs, the right
+//   pattern for Edge-Function-to-Edge-Function calls is verify_jwt=false on
+//   the callee + handler-level auth via custom header. See supabase/config.toml
+//   for the [functions.notify] verify_jwt setting.
 //
 // Called after a notifications row INSERT succeeds. Checks if the user
 // opted into the push channel via reminder.channels[]. If yes, fires an
@@ -360,10 +371,24 @@ async function firePreReminder(
 // primary delivery channel. The in-app Realtime toast already fired via
 // the notifications row. If push fails, users with sevenmynd.com open
 // in a tab still see the toast; users with the tab closed simply miss
-// this one push. Cron tick success is unaffected.
+// this one push.
 //
-// Auth: x-cron-secret header validated by notify. Same secret used by
-// pg_cron to invoke reminders-fire. One env var (CRON_SECRET) reused.
+// Failures: logged at console.error level with full context for
+// observability. Cron tick summary does NOT count these — by the time
+// the fetch resolves, the response has already been sent. Tracked as
+// audit-entry #7 follow-up: a future change should convert this to
+// awaited-with-timeout if accurate accounting becomes important.
+//
+// Auth (B3.4d-2): single-layer, validated by notify's handler.
+//   - notify has verify_jwt=false (set in supabase/config.toml AND in the
+//     dashboard's per-function "Verify JWT with legacy secret" toggle).
+//   - This call sends ONLY x-cron-secret. notify's handler reads it
+//     (notify/index.ts: const isInternalCall = cronSecret === Deno.env.get('CRON_SECRET'))
+//     and either accepts as cron-originated OR (if missing/wrong) requires
+//     a user-session JWT in the Authorization header.
+//   - Defense in depth: the cron secret is sufficiently strong to resist
+//     brute-force; the Supabase platform applies global rate-limiting on
+//     all Edge Functions to limit attack surface.
 
 function dispatchPushIfRequested(
   r: ReminderRow,
@@ -379,9 +404,10 @@ function dispatchPushIfRequested(
   const cronSecret = Deno.env.get("CRON_SECRET");
 
   if (!supabaseUrl || !cronSecret) {
-    console.warn(
-      `[REMINDERS_FIRE] Push dispatch skipped (missing SUPABASE_URL or CRON_SECRET) ` +
-      `for reminder=${r.id}`,
+    console.error(
+      `[REMINDERS_FIRE] Push dispatch SKIPPED (missing SUPABASE_URL or CRON_SECRET) ` +
+      `for reminder=${r.id}. This is a configuration error — push will silently not fire ` +
+      `until env vars are set.`,
     );
     return;
   }
@@ -397,24 +423,29 @@ function dispatchPushIfRequested(
     silent: r.importance !== "important",
   };
 
-  // Fire-and-forget. Return value not awaited; errors logged but do not
-  // affect cron tick accounting. Wrapped in a Promise.resolve().then to
-  // ensure the fetch is initiated (otherwise an unawaited fetch can be
-  // dropped by some runtimes).
+  // Fire-and-forget at the call-site level (no await). The inner promise
+  // logs success/failure but does NOT mutate the cron tick's accounting
+  // (the response has already been sent by the time the fetch resolves).
+  // Wrapped in Promise.resolve().then to ensure the fetch is initiated
+  // (otherwise an unawaited fetch can be dropped by some runtimes).
   Promise.resolve().then(async () => {
     try {
       const res = await fetch(notifyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // x-cron-secret: notify's handler-level check that distinguishes
+          // cron-originated calls (can target any user) from user-originated
+          // calls (scoped to caller). With verify_jwt=false on notify, this
+          // is the ONLY auth — no Authorization header is needed or expected.
           "x-cron-secret": cronSecret,
         },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
-        console.warn(
-          `[REMINDERS_FIRE] Push dispatch returned ${res.status} for reminder=${r.id}: ` +
+        console.error(
+          `[REMINDERS_FIRE] Push dispatch FAILED ${res.status} for reminder=${r.id}: ` +
           `${errText.slice(0, 200)}`,
         );
       } else {
@@ -425,8 +456,8 @@ function dispatchPushIfRequested(
         );
       }
     } catch (err) {
-      console.warn(
-        `[REMINDERS_FIRE] Push dispatch threw for reminder=${r.id}: ` +
+      console.error(
+        `[REMINDERS_FIRE] Push dispatch THREW for reminder=${r.id}: ` +
         `${err instanceof Error ? err.message : String(err)}`,
       );
     }

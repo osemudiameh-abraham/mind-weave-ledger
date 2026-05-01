@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -23,12 +24,20 @@ export function useSections() {
   const refreshSections = useCallback(async () => {
     if (!user) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("sections")
       .select("id, title, is_archived, message_count, created_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50);
+
+    if (error) {
+      console.error("[SECTIONS] refresh failed:", error);
+      // Don't toast here — refresh runs on every mount, and a transient
+      // failure shouldn't spam the user. Just log and leave the list as
+      // it was.
+      return;
+    }
 
     if (data) {
       setSections(
@@ -51,11 +60,17 @@ export function useSections() {
 
   const createSection = useCallback(async () => {
     if (!user) return null;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("sections")
       .insert({ user_id: user.id, title: "New Section" })
       .select("id, title, is_archived, message_count, created_at")
       .single();
+
+    if (error) {
+      console.error("[SECTIONS] create failed:", error);
+      toast.error("Couldn't create section. Please try again.");
+      return null;
+    }
 
     if (data) {
       const newSection: Section = {
@@ -73,13 +88,29 @@ export function useSections() {
     return null;
   }, [user]);
 
+  // Audit-fix A4 (Apr 30 2026): rename/delete/archive previously updated
+  // local state optimistically without checking whether the DB write
+  // succeeded. If the write failed (RLS quirk, network blip, FK violation
+  // on delete), the UI showed the change but next page load showed the
+  // original state. Now we await + check error and only update local
+  // state on confirmed success. Surface failures via toast.
   const renameSection = useCallback(async (id: string, name: string) => {
-    await supabase.from("sections").update({ title: name }).eq("id", id);
+    const { error } = await supabase.from("sections").update({ title: name }).eq("id", id);
+    if (error) {
+      console.error("[SECTIONS] rename failed:", error);
+      toast.error("Couldn't rename section. Please try again.");
+      return;
+    }
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
   }, []);
 
   const deleteSection = useCallback(async (id: string) => {
-    await supabase.from("sections").delete().eq("id", id);
+    const { error } = await supabase.from("sections").delete().eq("id", id);
+    if (error) {
+      console.error("[SECTIONS] delete failed:", error);
+      toast.error("Couldn't delete section. Please try again.");
+      return;
+    }
     setSections((prev) => prev.filter((s) => s.id !== id));
     if (activeSectionId === id) setActiveSectionId(null);
   }, [activeSectionId]);
@@ -87,7 +118,15 @@ export function useSections() {
   const toggleHideSection = useCallback(async (id: string) => {
     const section = sections.find((s) => s.id === id);
     if (!section) return;
-    await supabase.from("sections").update({ is_archived: !section.is_archived }).eq("id", id);
+    const { error } = await supabase
+      .from("sections")
+      .update({ is_archived: !section.is_archived })
+      .eq("id", id);
+    if (error) {
+      console.error("[SECTIONS] archive toggle failed:", error);
+      toast.error("Couldn't update section. Please try again.");
+      return;
+    }
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, is_archived: !s.is_archived } : s)));
   }, [sections]);
 

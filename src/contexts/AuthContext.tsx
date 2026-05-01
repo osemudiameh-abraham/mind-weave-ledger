@@ -257,9 +257,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!state.user) return;
     if (updates.name) {
       localStorage.setItem("seven_user_name", updates.name);
-      // Fire and forget — don't block the UI
-      supabase.auth.updateUser({ data: { name: updates.name } }).catch(() => {});
-      supabase.from("identity_profiles").update({ self_name: updates.name }).eq("user_id", state.user.id).then(() => {});
+      // Best-effort: update auth metadata + identity_profiles in parallel.
+      // Audit-fix A5 (Apr 30 2026): previously the identity_profiles
+      // update used .then(() => {}) which discarded errors silently.
+      // Now we log errors so future renames stick on next session.
+      // Update is async but we don't block the UI on it — local state
+      // updates immediately for responsiveness.
+      supabase.auth.updateUser({ data: { name: updates.name } }).catch((e) => {
+        console.error("[AUTH] auth metadata update failed:", e);
+      });
+      supabase
+        .from("identity_profiles")
+        .update({ self_name: updates.name })
+        .eq("user_id", state.user.id)
+        .then(({ error }) => {
+          if (error) {
+            console.error("[AUTH] identity_profiles rename failed:", error);
+          }
+        });
     }
     setState((prev) => {
       if (!prev.user) return prev;

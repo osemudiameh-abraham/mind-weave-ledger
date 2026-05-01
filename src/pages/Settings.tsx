@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
+import { useNotifications } from "@/hooks/use-notifications";
 import {
   User,
   Mail,
@@ -56,6 +57,19 @@ const Settings = () => {
     error: alwaysListeningError,
     usingFallback: alwaysListeningFallback,
   } = useAlwaysListening();
+
+  // B3.4b: real push subscription state, in addition to the user_preferences
+  // flag below. pushEnabled (intent) and pushSubscribed (actual browser
+  // subscription) are tracked separately so the toggle UI can show the
+  // truth — if the user opted in but the subscription has since lapsed
+  // (browser reset, expired endpoint, permission revoked), the toggle
+  // accurately shows OFF and clicking it re-subscribes.
+  const {
+    permission: pushPermission,
+    pushSubscribed,
+    requestPermission: requestPushPermission,
+    unsubscribe: unsubscribePush,
+  } = useNotifications();
 
   // Preferences state — initialised from localStorage cache, then overwritten by Supabase
   const [pushEnabled, setPushEnabled] = useState(() => {
@@ -161,12 +175,65 @@ const Settings = () => {
     }
   }, [user]);
 
-  const handleTogglePush = () => {
+  const handleTogglePush = async () => {
     const next = !pushEnabled;
-    setPushEnabled(next);
-    localStorage.setItem("seven_push_notifs", String(next));
-    updatePref("push_enabled", next);
-    toast(next ? "Push notifications enabled" : "Push notifications disabled");
+
+    if (next) {
+      // ON — request permission and subscribe.
+      // Browser permission prompt MUST come from the click event chain;
+      // the hook calls Notification.requestPermission() inline so this
+      // is fine. After grant, the hook subscribes via pushManager and
+      // upserts the row to notification_subscriptions.
+      const result = await requestPushPermission();
+
+      switch (result) {
+        case "granted_subscribed":
+          // Real success — browser permission granted, subscription stored.
+          setPushEnabled(true);
+          localStorage.setItem("seven_push_notifs", "true");
+          updatePref("push_enabled", true);
+          toast("Push notifications enabled");
+          return;
+        case "granted_no_push":
+          // Permission granted but VAPID env var not set.
+          // Leave the user_preferences flag ON so the user's intent is
+          // preserved for when push gets configured. In-app polling
+          // still works either way.
+          setPushEnabled(true);
+          localStorage.setItem("seven_push_notifs", "true");
+          updatePref("push_enabled", true);
+          toast.info("Notifications enabled (push delivery not yet available)");
+          return;
+        case "denied":
+          // User denied the browser prompt. Roll back the toggle UI.
+          toast.error(
+            "Browser denied notification permission. Allow notifications in your browser settings to enable push.",
+          );
+          return;
+        case "default":
+          // User dismissed the prompt without choosing. Toggle stays OFF.
+          toast("Notification permission was dismissed. Tap again to retry.");
+          return;
+        case "unsupported":
+          toast.error("This browser does not support push notifications.");
+          return;
+        case "subscribe_failed":
+          // Browser permission granted but pushManager.subscribe threw.
+          // Common cause: VAPID key mismatch between Supabase and the
+          // Vercel build the user's tab loaded from. Don't claim success.
+          toast.error(
+            "Notification permission granted but subscription failed. Try a hard refresh and toggle again.",
+          );
+          return;
+      }
+    } else {
+      // OFF — unsubscribe browser-side and clear the DB row.
+      const ok = await unsubscribePush();
+      setPushEnabled(false);
+      localStorage.setItem("seven_push_notifs", "false");
+      updatePref("push_enabled", false);
+      toast(ok ? "Push notifications disabled" : "Push notifications disabled (cleanup pending)");
+    }
   };
 
   const handleToggleEmail = () => {
@@ -198,16 +265,33 @@ const Settings = () => {
     toast(`Theme set to ${mode}`);
   };
 
-  const handleGmailToggle = () => {
+  const handleGmailToggle = async () => {
     if (gmailConnected) {
-      // Disconnect: remove oauth token
-      if (user) {
-        supabase.from("oauth_tokens").delete().eq("user_id", user.id).eq("provider", "gmail")
-          .then(() => {
-            setGmailConnected(false);
-            toast("Gmail disconnected");
-          });
+      // Disconnect: remove oauth token. Audit-fix A2 (Apr 30 2026):
+      // previously this was fire-and-forget via .then() — UI showed
+      // "Gmail disconnected" toast and toggle went off, but the OAuth
+      // token might still be in the DB. Architecture §12 governance
+      // hard rule #3 says revocation must be immediate and total. This
+      // patch awaits + checks the error and only updates UI on
+      // confirmed delete.
+      if (!user) return;
+
+      const { error } = await supabase
+        .from("oauth_tokens")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("provider", "gmail");
+
+      if (error) {
+        console.error("[SETTINGS] Gmail disconnect failed:", error);
+        toast.error(
+          "Couldn't disconnect Gmail. Please try again or contact support — your token may still be active.",
+        );
+        return; // Do NOT update UI; the token is still in the DB.
       }
+
+      setGmailConnected(false);
+      toast("Gmail disconnected");
     } else {
       // Connect: OAuth flow placeholder — will be wired in GEL phase
       setGmailConnecting(true);
@@ -347,7 +431,24 @@ const Settings = () => {
     {
       title: "Notifications",
       items: [
-        { icon: Bell, label: "Push Notifications", desc: pushEnabled ? "Enabled" : "Disabled", toggle: true, toggled: pushEnabled, action: handleTogglePush },
+        // B3.4b: Push Notifications row reflects REAL subscription state,
+        // not just user_preferences intent. If user opted in but the
+        // subscription has lapsed (browser reset, expired endpoint,
+        // permission revoked), the row honestly shows the current state
+        // and clicking re-engages the subscribe flow.
+        {
+          icon: Bell,
+          label: "Push Notifications",
+          desc: (() => {
+            if (pushPermission === "denied") return "Blocked in browser";
+            if (pushEnabled && pushSubscribed) return "Enabled";
+            if (pushEnabled && !pushSubscribed) return "Tap to re-enable";
+            return "Disabled";
+          })(),
+          toggle: true,
+          toggled: pushEnabled && pushSubscribed,
+          action: handleTogglePush,
+        },
         { icon: Mail, label: "Email Notifications", desc: emailEnabled ? "Enabled" : "Disabled", toggle: true, toggled: emailEnabled, action: handleToggleEmail },
       ],
     },
