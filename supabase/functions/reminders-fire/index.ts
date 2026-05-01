@@ -454,6 +454,28 @@ function dispatchPushIfRequested(
           `[REMINDERS_FIRE] Push dispatched reminder=${r.id} type=${notificationType} ` +
           `result=${JSON.stringify(result)}`,
         );
+        // Audit-fix A10 (May 1 2026): notify returns pushed:N, total:M where
+        // total is the count of available subscriptions and pushed is how
+        // many succeeded. If total >= 1 but pushed === 0, every subscription
+        // failed at notify (e.g., VAPID JWT signing error, FCM 4xx, etc.)
+        // and the user with no app tabs open will receive nothing — yet the
+        // reminder is already marked status='delivered' (correct per the
+        // architectural definition: in-app Realtime row was inserted).
+        //
+        // This is intentional behavior — push is "bonus reach" and its
+        // failure does not unwind the reminder. But a silent push failure
+        // affects every multi-device-pushed user and must be observable
+        // for ops. This WARN log surfaces it without changing semantics.
+        // Grep for [REMINDERS_FIRE] PUSH_SILENT_FAIL to monitor.
+        const pushed = typeof result?.pushed === "number" ? result.pushed : null;
+        const total = typeof result?.total === "number" ? result.total : null;
+        if (pushed === 0 && total !== null && total >= 1) {
+          console.warn(
+            `[REMINDERS_FIRE] PUSH_SILENT_FAIL reminder=${r.id} type=${notificationType} ` +
+            `pushed=0 total=${total} — reminder marked delivered but no push reached any subscription. ` +
+            `Investigate notify logs at this timestamp for VAPID/FCM/encryption errors.`,
+          );
+        }
       }
     } catch (err) {
       console.error(

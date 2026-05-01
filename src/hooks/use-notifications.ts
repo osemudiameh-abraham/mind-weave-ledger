@@ -125,20 +125,66 @@ export function useNotifications(): UseNotificationsApi {
 
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
+      const expectedKeyBytes = urlBase64ToUint8Array(vapidKey);
       if (existing) {
-        // Already subscribed — make sure DB has the row (idempotent)
-        const ok = await persistSubscription(existing);
-        if (!ok) {
-          console.error("[NOTIFICATIONS] Existing subscription found but DB persist failed");
-          return "subscribe_failed";
+        // Audit-fix A11 (May 1 2026): verify the existing subscription is
+        // bound to the CURRENT VAPID public key before reusing it. If VAPID
+        // keys rotated since the original subscribe, the browser still holds
+        // a subscription bound to the old key — pushes signed with the new
+        // private key will be silently dropped at the browser layer (FCM
+        // returns 201, browser receives push event, but push payload
+        // verification fails against the cached old applicationServerKey).
+        // Without this check, B3.4d-3-class incidents (key half-rotation)
+        // produce silently-broken subscriptions per user, only detectable
+        // via end-to-end test on each user's device.
+        //
+        // Compare the existing subscription's applicationServerKey bytes
+        // against the current VITE_VAPID_PUBLIC_KEY bytes. If they don't
+        // match: unsubscribe + fall through to fresh subscribe below.
+        const existingKey = existing.options.applicationServerKey;
+        const keyMatches = existingKey instanceof ArrayBuffer
+          ? bytesEqual(new Uint8Array(existingKey), expectedKeyBytes)
+          : false;
+        if (keyMatches) {
+          // Key matches current — safe to reuse and just persist DB row
+          const ok = await persistSubscription(existing);
+          if (!ok) {
+            console.error("[NOTIFICATIONS] Existing subscription found but DB persist failed");
+            return "subscribe_failed";
+          }
+          setState((prev) => ({ ...prev, pushSubscribed: true }));
+          return "granted_subscribed";
         }
-        setState((prev) => ({ ...prev, pushSubscribed: true }));
-        return "granted_subscribed";
+        // Key mismatch — force re-subscribe against current VAPID
+        console.warn(
+          "[NOTIFICATIONS] Existing subscription bound to stale VAPID key — unsubscribing to force fresh subscribe",
+        );
+        try {
+          await existing.unsubscribe();
+        } catch (unsubErr) {
+          // Non-fatal — the fresh subscribe call below will replace the
+          // browser's subscription regardless. Just log.
+          console.warn("[NOTIFICATIONS] unsubscribe before re-subscribe failed (continuing):", unsubErr);
+        }
+        // Also delete the now-stale DB row by endpoint match
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user && existing.endpoint) {
+            await supabase
+              .from("notification_subscriptions")
+              .delete()
+              .eq("user_id", session.user.id)
+              .eq("endpoint", existing.endpoint);
+          }
+        } catch (dbErr) {
+          console.warn("[NOTIFICATIONS] stale subscription DB cleanup failed (continuing):", dbErr);
+        }
+        // Fall through to fresh subscribe below
       }
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        applicationServerKey: expectedKeyBytes,
       });
 
       const persisted = await persistSubscription(subscription);
@@ -379,4 +425,22 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+/**
+ * Audit-fix A11 helper (May 1 2026): byte-level equality check used to
+ * compare an existing PushSubscription's applicationServerKey against
+ * the current VITE_VAPID_PUBLIC_KEY. Returns true only if both arrays
+ * have identical length and identical bytes.
+ *
+ * Used at subscribe time to detect VAPID key rotation — if the cached
+ * subscription is bound to a different key than the current deploy
+ * expects, push delivery would silently fail at the browser layer.
+ */
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
