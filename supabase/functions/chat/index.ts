@@ -1315,14 +1315,19 @@ async function storeResearchMemory(
   research: ResearchResult,
 ): Promise<void> {
   try {
+    // F3-narrow (2026-05-02): aligned to live memories_structured schema.
+    //   - content -> text (column was renamed by 20260415; F0 confirmed)
+    //   - source dropped (column does not exist in live per B1 Q-V1)
+    //   - metadata kept (column added by 20260502120000 migration; carries
+    //     is_permanent flag for the sec. 3.5 Step 7 24h-TTL cleanup cron)
     await supabase.from("memories_structured").insert({
       user_id: userId,
-      content: `[Research] Q: ${query} → ${research.answer}`,
+      text: `[Research] Q: ${query} → ${research.answer}`,
       memory_type: "research",
       importance: 3,
-      source: "research",
       metadata: {
         is_permanent: false,
+        source: "research",
         query,
         sources: research.sources,
         search_queries_used: research.search_queries_used,
