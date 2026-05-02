@@ -1320,7 +1320,15 @@ async function storeResearchMemory(
     //   - source dropped (column does not exist in live per B1 Q-V1)
     //   - metadata kept (column added by 20260502120000 migration; carries
     //     is_permanent flag for the sec. 3.5 Step 7 24h-TTL cleanup cron)
-    await supabase.from("memories_structured").insert({
+    // F3.1 (2026-05-02): Supabase JS client returns errors in the result
+    // object, not via throw. Previous code awaited the insert without
+    // destructuring, so errors were silently swallowed. Now we capture
+    // the error result and log it explicitly. The "[RESEARCH] success"
+    // log line is unrelated (it logs the Gemini API call), not the DB
+    // INSERT. Pre-F3.1, every research-memory INSERT silently failed;
+    // post-F3.1, failures surface in the function logs as
+    // [RESEARCH_STORE] entries with the actual Postgres error.
+    const { error: researchInsertError } = await supabase.from("memories_structured").insert({
       user_id: userId,
       text: `[Research] Q: ${query} → ${research.answer}`,
       memory_type: "research",
@@ -1334,6 +1342,17 @@ async function storeResearchMemory(
         model: GEMINI_RESEARCH_MODEL,
       },
     });
+    if (researchInsertError) {
+      console.warn(
+        "[RESEARCH_STORE] INSERT failed:",
+        researchInsertError.message,
+        researchInsertError.details,
+        researchInsertError.hint,
+        researchInsertError.code,
+      );
+    } else {
+      console.log("[RESEARCH_STORE] persisted research memory");
+    }
   } catch (err) {
     // Non-fatal. Logging is all we do — research is already in the current
     // response; persistence failure only affects future cross-reference.
