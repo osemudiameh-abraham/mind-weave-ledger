@@ -121,7 +121,7 @@ const Splash = () => {
             transition={{ delay: 0.1, duration: 0.5 }}
             className="text-[28px] md:text-[36px] font-semibold text-foreground tracking-tight text-center mt-6 leading-tight"
           >
-            The AI that actually<br />remembers you
+            Seven Mynd is cognitive continuity — the first system that knows you across time.
           </motion.h1>
 
           <motion.p
@@ -130,10 +130,7 @@ const Splash = () => {
             transition={{ delay: 0.2, duration: 0.5 }}
             className="text-[14px] md:text-[15px] text-muted-foreground text-center mt-4 max-w-[480px] leading-relaxed"
           >
-            Seven Mynd is a cognitive continuity system. It remembers your conversations,
-            tracks your decisions, detects your behavioural patterns, and helps you make
-            better choices over time. Every conversation builds on the last — so the longer
-            you use it, the smarter it gets about you.
+            Seven Mynd remembers every conversation, tracks every decision you state, and learns who you are across every device you use. It does not reset between sessions. It does not forget what mattered last week. It accumulates. The longer you use it, the more it becomes an extension of you — guarding your decisions, surfacing the patterns you live in, and protecting you from the mistakes you have made before.
           </motion.p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-8 w-full">
