@@ -16,7 +16,7 @@ import TrialOfferDialog from "@/components/TrialOfferDialog";
 import { formatMessageTime } from "@/lib/format-message-time";
 import { useChat } from "@/hooks/use-chat";
 import { supabase } from "@/lib/supabase";
-import { Loader2, ArrowDown } from "lucide-react";
+import { Loader2, ArrowDown, X, Check } from "lucide-react";
 import { unlockMobileAudio } from "@/services/live/RealLiveService";
 
 const suggestions = [
@@ -45,17 +45,29 @@ const Home = () => {
   } = useSections();
 
   const { shouldShowPopup, markPopupShown, startTrial } = useTrialStatus();
-  const { messages, loading: chatLoading, sendMessage, loadSection, newSection } = useChat();
+  const {
+    messages,
+    sectionId,
+    loading: chatLoading,
+    sendMessage,
+    regenerate,
+    editAndResend,
+    loadSection,
+    newSection,
+  } = useChat();
 
-  // ─── Smart auto-scroll (Architecture Section 10.5) ───
-  // Auto-scroll to latest message. Disable when user manually scrolls up.
-  // Show floating "scroll to bottom" button when auto-scroll is disabled.
+  // --- Inline edit state ---------------------------------------------
+  // Per Architecture v5.7 sec.10.10.6 the Edit affordance on an assistant
+  // message opens an inline editor on the user message above it. Holds the
+  // assistantResponseId being edited + the staged new text.
+  const [editing, setEditing] = useState<{ assistantResponseId: string; text: string } | null>(null);
+
+  // --- Smart auto-scroll (Architecture Section 10.5) ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userScrolledRef = useRef(false);
 
-  // Track scroll position — disable auto-scroll when user scrolls up >100px from bottom
   useEffect(() => {
     const handleScroll = () => {
       const scrollBottom = document.documentElement.scrollHeight
@@ -63,12 +75,10 @@ const Home = () => {
         - document.documentElement.clientHeight;
 
       if (scrollBottom > 100) {
-        // User has scrolled up
         userScrolledRef.current = true;
         setAutoScroll(false);
         setShowScrollButton(true);
       } else {
-        // User is at the bottom
         userScrolledRef.current = false;
         setAutoScroll(true);
         setShowScrollButton(false);
@@ -79,14 +89,12 @@ const Home = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Auto-scroll when new messages arrive (only if auto-scroll is enabled)
   useEffect(() => {
     if (autoScroll && !userScrolledRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, chatLoading, autoScroll]);
 
-  // Scroll to bottom handler for the floating button
   const scrollToBottom = useCallback(() => {
     userScrolledRef.current = false;
     setAutoScroll(true);
@@ -94,17 +102,14 @@ const Home = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  // Load section from URL param (e.g. /home?section=uuid from Library)
   useEffect(() => {
     const sectionFromUrl = searchParams.get("section");
     if (sectionFromUrl) {
       setActiveSectionId(sectionFromUrl);
-      // Clear the param so it doesn't re-trigger on subsequent renders
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setActiveSectionId, setSearchParams]);
 
-  // Toast for due reminders
   useEffect(() => {
     dueNow.forEach((r) => {
       toast(r.title, { description: r.description || "Reminder from Seven", duration: 6000 });
@@ -112,7 +117,6 @@ const Home = () => {
     });
   }, [dueNow, markSeen]);
 
-  // Load conversation when sidebar selection changes
   useEffect(() => {
     if (activeSectionId) {
       loadSection(activeSectionId);
@@ -123,9 +127,24 @@ const Home = () => {
 
   const handleSend = async (text: string) => {
     await sendMessage(text);
-    // DB trigger increments sections.message_count on message insert; re-sync
-    // sidebar so the count reflects the new message without a full page reload.
     refreshSections();
+  };
+
+  const handleStartEdit = (assistantResponseId: string, currentUserText: string) => {
+    setEditing({ assistantResponseId, text: currentUserText });
+  };
+
+  const handleCommitEdit = async () => {
+    if (!editing) return;
+    const { assistantResponseId, text } = editing;
+    setEditing(null);
+    if (!text.trim()) return;
+    await editAndResend(assistantResponseId, text.trim());
+    refreshSections();
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(null);
   };
 
   const userName = localStorage.getItem("seven_user_name") || "there";
@@ -138,7 +157,7 @@ const Home = () => {
     return "Good night";
   };
 
-  // ─── Intelligent greeting context ───
+  // --- Intelligent greeting context ---
   const [greetingContext, setGreetingContext] = useState<{
     pendingReviews: number;
     latestFact: string | null;
@@ -176,7 +195,6 @@ const Home = () => {
     loadContext();
   }, []);
 
-  // Build tips: context-aware first, then generic
   const contextTips: string[] = [];
   if (greetingContext.pendingReviews > 0) {
     contextTips.push(`You have ${greetingContext.pendingReviews} decision${greetingContext.pendingReviews === 1 ? "" : "s"} due for review. Want to check in?`);
@@ -189,11 +207,11 @@ const Home = () => {
   }
 
   const genericTips = [
-    "Tell me about a decision you're facing — I'll track it and check back later.",
-    "Try asking me about your patterns — I'll surface what matters over time.",
+    "Tell me about a decision you're facing -- I'll track it and check back later.",
+    "Try asking me about your patterns -- I'll surface what matters over time.",
     "Check your Vault anytime to see everything I know about you.",
     "Head to your Digest for a weekly summary of what I've learned.",
-    "Seven learns from every conversation — the more you share, the sharper the insights.",
+    "Seven learns from every conversation -- the more you share, the sharper the insights.",
   ];
 
   const tips = contextTips.length > 0 ? [...contextTips, ...genericTips] : genericTips;
@@ -297,39 +315,100 @@ const Home = () => {
           </div>
         ) : (
           <div className="flex flex-col gap-4 mt-6">
-            {messages.map((msg, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25 }}
-                className={`group flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-                tabIndex={0}
-              >
-                {msg.role === "user" ? (
-                  <>
-                    <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
-                      {msg.text}
-                    </div>
-                    {/* Implicit timestamp — v5.7 §10.9 rule 5 + §10.5
-                        hover/long-press behaviour. Hidden by default,
-                        revealed on group-hover (desktop) or
-                        group-focus-within (mobile tap). */}
-                    {msg.createdAt ? (
-                      <div
-                        className="text-[11px] text-muted-foreground/70 mt-1 mr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                        aria-label={`Sent ${formatMessageTime(msg.createdAt)}`}
-                      >
-                        {formatMessageTime(msg.createdAt)}
+            {messages.map((msg, i) => {
+              // For assistant messages we need to know which user message
+              // came directly before -- it's the edit target.
+              const userMsgAbove = msg.role === "ai" && i > 0 && messages[i - 1].role === "user"
+                ? messages[i - 1]
+                : null;
+              const isBeingEdited = editing && msg.role === "user" && i + 1 < messages.length
+                && messages[i + 1].role === "ai"
+                && messages[i + 1].responseId === editing.assistantResponseId;
+
+              return (
+                <motion.div
+                  key={msg.responseId ?? i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className={`group flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+                  tabIndex={0}
+                >
+                  {msg.role === "user" ? (
+                    isBeingEdited ? (
+                      <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] w-full bg-primary/10 rounded-[20px] rounded-br-md px-4 py-3 text-[14px]">
+                        <textarea
+                          value={editing!.text}
+                          onChange={(e) => setEditing({ ...editing!, text: e.target.value })}
+                          autoFocus
+                          rows={3}
+                          className="w-full bg-transparent text-foreground outline-none resize-none leading-relaxed"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                              e.preventDefault();
+                              handleCommitEdit();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              handleCancelEdit();
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-end gap-1 mt-2">
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            aria-label="Cancel edit"
+                            className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors"
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCommitEdit}
+                            aria-label="Send edited message"
+                            className="w-7 h-7 rounded-md flex items-center justify-center text-primary hover:bg-background/50 transition-colors"
+                          >
+                            <Check size={14} aria-hidden="true" />
+                          </button>
+                        </div>
                       </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <TypewriterBubble text={msg.text} createdAt={msg.createdAt} />
-                )}
-              </motion.div>
-            ))}
-            {chatLoading && (
+                    ) : (
+                      <>
+                        <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed bg-primary/10 text-foreground rounded-[20px] rounded-br-md">
+                          {msg.text}
+                        </div>
+                        {msg.createdAt ? (
+                          <div
+                            className="text-[11px] text-muted-foreground/70 mt-1 mr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                            aria-label={`Sent ${formatMessageTime(msg.createdAt)}`}
+                          >
+                            {formatMessageTime(msg.createdAt)}
+                          </div>
+                        ) : null}
+                      </>
+                    )
+                  ) : (
+                    <TypewriterBubble
+                      text={msg.text}
+                      createdAt={msg.createdAt}
+                      responseId={msg.responseId}
+                      thinkingTrace={msg.thinkingTrace}
+                      isStreaming={msg.isStreaming}
+                      modelUsed={msg.modelUsed}
+                      contextUsed={msg.contextUsed}
+                      sectionId={sectionId}
+                      onRegenerate={msg.responseId
+                        ? () => regenerate(msg.responseId!)
+                        : undefined}
+                      onEdit={msg.responseId && userMsgAbove
+                        ? () => handleStartEdit(msg.responseId!, userMsgAbove.text)
+                        : undefined}
+                    />
+                  )}
+                </motion.div>
+              );
+            })}
+            {chatLoading && messages.length > 0 && messages[messages.length - 1]?.isStreaming === false && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -337,7 +416,7 @@ const Home = () => {
               >
                 <div className="flex items-center gap-2 px-4 py-3 rounded-[20px] bg-muted">
                   <Loader2 size={14} className="animate-spin text-primary" />
-                  <span className="text-[13px] text-muted-foreground">Seven is thinking…</span>
+                  <span className="text-[13px] text-muted-foreground">Seven is thinking...</span>
                 </div>
               </motion.div>
             )}
@@ -346,7 +425,6 @@ const Home = () => {
         )}
       </div>
 
-      {/* Floating scroll-to-bottom button (Architecture Section 10.5) */}
       <AnimatePresence>
         {showScrollButton && messages.length > 0 && (
           <motion.button
