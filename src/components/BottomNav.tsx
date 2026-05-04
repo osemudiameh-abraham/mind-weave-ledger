@@ -13,6 +13,18 @@ const BottomNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Hide bottom nav on /home so the chat input has full breathing room at
+  // the bottom of the viewport. Side menu (top-left hamburger) provides
+  // navigation to Reviews / Vault / Trace / Digest from /home -- routes
+  // remain fully reachable. On every non-home route, bottom nav renders
+  // as before, including the highlighted active tab. Architecture v5.7
+  // sec.10 (chat-first interaction) + sec.15.10 (Premium Quality Gate) --
+  // mobile chat surface should not compete with persistent navigation
+  // chrome at the bottom of the viewport.
+  if (location.pathname === "/home") {
+    return null;
+  }
+
   return (
     <nav
       aria-label="Primary"
