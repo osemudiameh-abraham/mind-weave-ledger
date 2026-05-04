@@ -3256,6 +3256,7 @@ After this turn, the user will reply with approval ("yes", "go ahead", etc.) or 
               assistant_message_created_at: assistantCreatedAt,
               model_used: modelUsed,
               thinking_trace: thinkingTrace,
+              research_sources: researchResult ? researchResult.sources.map((s) => ({ title: s.title, url: s.uri })) : [],
               context_used: {
                 facts: facts.length,
                 decisions: decisions.length,
@@ -3369,6 +3370,7 @@ After this turn, the user will reply with approval ("yes", "go ahead", etc.) or 
         user_message_created_at: userMessageCreatedAt,
         assistant_message_created_at: assistantCreatedAt,
         thinking_trace: thinkingTrace,
+        research_sources: researchResult ? researchResult.sources.map((s) => ({ title: s.title, url: s.uri })) : [],
         context_used: {
           facts: facts.length,
           decisions: decisions.length,
