@@ -253,7 +253,7 @@ const Home = () => {
         className="px-4 max-w-[780px] mx-auto"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 3.5rem)",
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 8rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 5.5rem)",
         }}
       >
         {messages.length === 0 ? (
@@ -435,7 +435,7 @@ const Home = () => {
             transition={{ duration: 0.15 }}
             onClick={scrollToBottom}
             className="fixed z-50 right-4 w-11 h-11 rounded-full bg-card border border-border shadow-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            style={{ bottom: "calc(56px + env(safe-area-inset-bottom, 0px) + 72px)" }}
+            style={{ bottom: "calc(12px + env(safe-area-inset-bottom, 0px) + 72px)" }}
             aria-label="Scroll to latest message"
           >
             <ArrowDown size={18} aria-hidden="true" />
