@@ -13,7 +13,16 @@ import LiveAurora from "@/components/live/LiveAurora";
 import { useAlwaysListening } from "@/contexts/AlwaysListeningContext";
 import { unlockMobileAudio } from "@/services/live/RealLiveService";
 import { motion } from "framer-motion";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
+import { Radio } from "lucide-react";
+import Banner from "@/components/Banner";
+import {
+  evaluateLiveBanners,
+  markBannerDismissed,
+  markSurfaceUsed,
+  getBannerContent,
+  type BannerSpec,
+} from "@/lib/banner-triggers";
 
 const Live = () => {
   const navigate = useNavigate();
@@ -44,6 +53,39 @@ const Live = () => {
   }, []);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
+
+  // --- Banner state (Architecture v5.7 sec.4.13) ----------------------
+  // Live surface evaluates banner triggers on mount. At most one banner
+  // visible at a time; positioned just below LiveHeader.
+  const [activeBanner, setActiveBanner] = useState<BannerSpec | null>(null);
+  const [bannerVisible, setBannerVisible] = useState(false);
+
+  useEffect(() => {
+    const spec = evaluateLiveBanners();
+    if (spec) {
+      setActiveBanner(spec);
+      setBannerVisible(true);
+    }
+  }, []);
+
+  // Mark Live as used when the session becomes active. Resets long-absence.
+  useEffect(() => {
+    if (session.active) {
+      markSurfaceUsed("live");
+    }
+  }, [session.active]);
+
+  const handleBannerDismiss = () => {
+    if (!activeBanner) return;
+    markBannerDismissed(activeBanner);
+    setBannerVisible(false);
+  };
+
+  const handleBannerCta = () => {
+    if (!activeBanner) return;
+    markBannerDismissed(activeBanner);
+    setBannerVisible(false);
+  };
 
   // Frame capture: sends video frames to the service for visual analysis
   useFrameCapture({
@@ -107,6 +149,20 @@ const Live = () => {
         sessionStatus={session.sessionStatus}
         onToggleTextInput={() => session.setShowTextInput((v) => !v)}
       />
+
+      {/* Banner (sec.4.13). Renders below the header, above the transcript
+          overlay. Translucent backdrop blends with Live's deep background. */}
+      {activeBanner ? (
+        <div className="relative z-10 px-4 pt-2 max-w-[640px] mx-auto w-full">
+          <Banner
+            {...getBannerContent(activeBanner)}
+            icon={Radio}
+            visible={bannerVisible}
+            onDismiss={handleBannerDismiss}
+            onCta={handleBannerCta}
+          />
+        </div>
+      ) : null}
 
       {/* Transcript overlay */}
       <LiveTranscript entries={session.transcript} visible />
