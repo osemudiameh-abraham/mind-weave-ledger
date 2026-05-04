@@ -41,6 +41,17 @@ export interface ContextUsed {
   situations?: number;
 }
 
+/**
+ * A single research source attached to an assistant message. Returned by the
+ * chat function in the SSE done event when Gemini grounding fired during
+ * the turn (Architecture v5.7 sec.10.10.5). Surfaced in the UI by the
+ * Citations component below the response text.
+ */
+export interface ResearchSource {
+  title: string;
+  url: string;
+}
+
 export interface ChatMessage {
   role: "user" | "ai";
   text: string;
@@ -56,6 +67,9 @@ export interface ChatMessage {
   modelUsed?: string;
   /** Per-message context-used counts. */
   contextUsed?: ContextUsed;
+  /** Research sources from Gemini grounding (sec.10.10.5). Empty array
+   *  when grounding didn't fire on this turn. Surfaced by Citations. */
+  researchSources?: ResearchSource[];
 }
 
 interface ChatState {
@@ -235,6 +249,16 @@ export function useChat() {
             const sectionId = typeof event.section_id === "string" ? event.section_id : null;
             const contextUsed = (event.context_used as ContextUsed | undefined) ?? undefined;
             const modelUsed = typeof event.model_used === "string" ? event.model_used : undefined;
+            const researchSourcesRaw = event.research_sources;
+            const researchSources: ResearchSource[] = Array.isArray(researchSourcesRaw)
+              ? researchSourcesRaw
+                  .filter((s): s is { title?: unknown; url?: unknown } => typeof s === "object" && s !== null)
+                  .map((s) => ({
+                    title: typeof s.title === "string" ? s.title : "",
+                    url: typeof s.url === "string" ? s.url : "",
+                  }))
+                  .filter((s) => s.url.length > 0)
+              : [];
 
             setState((prev) => {
               const msgs = [...prev.messages];
@@ -256,6 +280,7 @@ export function useChat() {
                     isStreaming: false,
                     contextUsed,
                     modelUsed,
+                    researchSources,
                   };
                   break;
                 }

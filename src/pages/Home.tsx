@@ -16,8 +16,15 @@ import TrialOfferDialog from "@/components/TrialOfferDialog";
 import { formatMessageTime } from "@/lib/format-message-time";
 import { useChat } from "@/hooks/use-chat";
 import { supabase } from "@/lib/supabase";
-import { Loader2, ArrowDown, X, Check } from "lucide-react";
+import { Loader2, ArrowDown, X, Check, Mic } from "lucide-react";
 import { unlockMobileAudio } from "@/services/live/RealLiveService";
+import Banner from "@/components/Banner";
+import {
+  evaluateHomeBanners,
+  markBannerDismissed,
+  getBannerContent,
+  type BannerSpec,
+} from "@/lib/banner-triggers";
 
 const suggestions = [
   "What patterns did I show this week?",
@@ -61,6 +68,38 @@ const Home = () => {
   // message opens an inline editor on the user message above it. Holds the
   // assistantResponseId being edited + the staged new text.
   const [editing, setEditing] = useState<{ assistantResponseId: string; text: string } | null>(null);
+
+  // --- Banner state (Architecture v5.7 sec.4.13) ----------------------
+  // The Home surface evaluates banner triggers (first-time / post-update /
+  // long-absence) on mount and shows at most one banner above the message
+  // area. Triggers are pure-localStorage, no backend involvement.
+  const [activeBanner, setActiveBanner] = useState<BannerSpec | null>(null);
+  const [bannerVisible, setBannerVisible] = useState(false);
+
+  useEffect(() => {
+    // Evaluate synchronously on mount -- no async flicker. If a banner spec
+    // is returned, render it; otherwise nothing shows.
+    const spec = evaluateHomeBanners();
+    if (spec) {
+      setActiveBanner(spec);
+      setBannerVisible(true);
+    }
+  }, []);
+
+  const handleBannerDismiss = () => {
+    if (!activeBanner) return;
+    markBannerDismissed(activeBanner);
+    setBannerVisible(false);
+  };
+
+  const handleBannerCta = () => {
+    if (!activeBanner) return;
+    // CTA on Home banner is always "Got it" / "Continue" -- both are
+    // acknowledgements, not navigations. Same effect as dismiss for now.
+    // Future polish may route long-absence "Continue" to a session resume.
+    markBannerDismissed(activeBanner);
+    setBannerVisible(false);
+  };
 
   // --- Smart auto-scroll (Architecture Section 10.5) ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -256,6 +295,21 @@ const Home = () => {
           paddingBottom: "calc(env(safe-area-inset-bottom) + 5.5rem)",
         }}
       >
+        {/* Banner (sec.4.13) -- voice/Live trigger evaluation on mount.
+            Renders above all chat content, including empty-state suggestions
+            and the message list. At most one banner visible at a time. */}
+        {activeBanner ? (
+          <div className="mt-3">
+            <Banner
+              {...getBannerContent(activeBanner)}
+              icon={Mic}
+              visible={bannerVisible}
+              onDismiss={handleBannerDismiss}
+              onCta={handleBannerCta}
+            />
+          </div>
+        ) : null}
+
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[70vh]">
             <motion.div
@@ -397,6 +451,7 @@ const Home = () => {
                       modelUsed={msg.modelUsed}
                       contextUsed={msg.contextUsed}
                       sectionId={sectionId}
+                      researchSources={msg.researchSources}
                       onRegenerate={msg.responseId
                         ? () => regenerate(msg.responseId!)
                         : undefined}
