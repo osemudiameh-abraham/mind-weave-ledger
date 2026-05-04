@@ -15,10 +15,10 @@ interface TypewriterBubbleProps {
   /** ISO timestamp of when the assistant message was created. Optional --
    *  bubbles without a timestamp simply omit the time line. */
   createdAt?: string | null;
-  /** Client-generated UUID for this assistant response. Required for
-   *  feedback_signals capture (sec.10.10.8). Absent on historical messages
-   *  prefixed with "db:" -- in that case we still allow feedback but keyed
-   *  by the synthesized id. */
+  /** Client-generated UUID for assistant responses while streaming, OR the
+   *  messages.id uuid for historical messages loaded from the database.
+   *  In both cases it's a real uuid, satisfying feedback_signals.response_id
+   *  type constraint. Required for feedback_signals capture (sec.10.10.8). */
   responseId?: string;
   /** Live progress events from the chat function while streaming
    *  (sec.10.10.7). Empty array on completion until first event arrives. */
@@ -229,17 +229,6 @@ const TypewriterBubble = ({
         return;
       }
 
-      // Skip historical (db:) responseIds -- the soft-link in
-      // feedback_signals.response_id is a uuid column, so synthesized
-      // "db:<id>" strings would fail the type check. Only real client UUIDs
-      // get written. Historical messages can be regenerated to get a new
-      // UUID for feedback.
-      if (responseId.startsWith("db:")) {
-        toast.info("Regenerate to give feedback on historical messages", { duration: 2500 });
-        setFeedbackState(prevState);
-        return;
-      }
-
       const responseMetadata = computeResponseMetadata(text, contextUsed);
       const contextAtTime = {
         conversation_id: sectionId ?? null,
@@ -324,7 +313,6 @@ const TypewriterBubble = ({
   };
 
   const showAffordances = renderingComplete && !!text && responseId !== undefined;
-  const isHistorical = responseId?.startsWith("db:");
 
   return (
     <div className="max-w-[85%] md:max-w-[75%] lg:max-w-[65%] px-4 py-3 text-[14px] leading-relaxed text-foreground">
@@ -405,7 +393,7 @@ const TypewriterBubble = ({
               }
               label={feedbackState === "positive" ? "You liked this" : "Like"}
               onClick={() => submitFeedback("positive")}
-              disabled={feedbackState === "submitting" || isHistorical}
+              disabled={feedbackState === "submitting"}
               active={feedbackState === "positive"}
             />
             <AffordanceButton
@@ -418,7 +406,7 @@ const TypewriterBubble = ({
               }
               label={feedbackState === "negative" ? "You disliked this" : "Dislike"}
               onClick={() => submitFeedback("negative")}
-              disabled={feedbackState === "submitting" || isHistorical}
+              disabled={feedbackState === "submitting"}
               active={feedbackState === "negative"}
             />
             <AffordanceButton
