@@ -119,16 +119,29 @@ const Splash = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1, duration: 0.5 }}
-            className="text-[28px] md:text-[36px] font-semibold text-foreground tracking-tight text-center mt-6 leading-tight"
+            className="text-[30px] md:text-[40px] font-semibold text-foreground tracking-[-0.02em] text-center mt-6 leading-[1.15]"
           >
-            Seven Mynd is cognitive continuity — the first system that knows you across time.
+            Seven Mynd is{" "}
+            <span className="bg-gradient-to-r from-primary via-[hsl(250,80%,65%)] to-[hsl(280,75%,60%)] bg-clip-text text-transparent">
+              cognitive continuity
+            </span>
+            <span className="block text-[20px] md:text-[24px] font-normal text-muted-foreground mt-3 tracking-[-0.01em]">
+              the first system that knows you across time.
+            </span>
           </motion.h1>
+
+          <motion.div
+            initial={{ opacity: 0, scaleX: 0 }}
+            animate={{ opacity: 1, scaleX: 1 }}
+            transition={{ delay: 0.35, duration: 0.6 }}
+            className="w-12 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent mt-6 origin-center"
+          />
 
           <motion.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-            className="text-[14px] md:text-[15px] text-muted-foreground text-center mt-4 max-w-[480px] leading-relaxed"
+            transition={{ delay: 0.25, duration: 0.5 }}
+            className="text-[15px] md:text-[16px] text-foreground/80 text-center mt-5 max-w-[520px] leading-[1.65]"
           >
             Seven Mynd remembers every conversation, tracks every decision you state, and learns who you are across every device you use. It does not reset between sessions. It does not forget what mattered last week. It accumulates. The longer you use it, the more it becomes an extension of you — guarding your decisions, surfacing the patterns you live in, and protecting you from the mistakes you have made before.
           </motion.p>
