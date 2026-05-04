@@ -376,10 +376,12 @@ export function useChat() {
           role: m.role === "assistant" ? "ai" as const : "user" as const,
           text: m.content,
           createdAt: m.created_at ?? "",
-          // Historical messages: synthesize a responseId from the DB row id
-          // so per-message affordances have a stable target. Real-time
-          // streamed messages keep their client-generated UUID.
-          responseId: m.role === "assistant" ? `db:${m.id}` : undefined,
+          // Historical messages: use the DB row's uuid directly as
+          // responseId so per-message affordances and feedback_signals
+          // soft-link work uniformly across live-streamed and historical
+          // messages. messages.id is uuid-typed in the schema, satisfying
+          // feedback_signals.response_id's uuid column constraint.
+          responseId: m.role === "assistant" ? m.id : undefined,
           thinkingTrace: [],
           // Historical messages don't carry model_used (column doesn't exist
           // on messages table). Live SSE messages still receive modelUsed
