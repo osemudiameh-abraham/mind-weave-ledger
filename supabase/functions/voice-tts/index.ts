@@ -129,6 +129,38 @@ serve(async (req) => {
       );
     }
 
+    // Content negotiation: supabase.functions.invoke() sets Accept: application/json
+    // by default and JSON-parses the response body. Raw binary returns are unreadable
+    // through that path. Return a base64-wrapped JSON envelope when JSON is asked
+    // for; preserve raw binary for any caller using fetch + arrayBuffer() directly
+    // (Live mode currently uses this path).
+    const acceptHeader = req.headers.get("Accept") || "";
+    const wantsJson = acceptHeader.includes("application/json");
+
+    if (wantsJson) {
+      // Encode the ArrayBuffer to base64. Deno provides btoa, but it requires
+      // a binary string; convert from Uint8Array bytewise.
+      const bytes = new Uint8Array(audioData);
+      let binary = "";
+      const chunkSize = 0x8000; // 32K -- avoids "too many arguments" on large bufs
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+      }
+      const base64 = btoa(binary);
+
+      return new Response(
+        JSON.stringify({ audio: base64, content_type: "audio/mpeg" }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+          },
+        }
+      );
+    }
+
     return new Response(audioData, {
       headers: {
         ...corsHeaders,
