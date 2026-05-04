@@ -366,7 +366,7 @@ export function useChat() {
   const loadSection = useCallback(async (sectionId: string) => {
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, model_used")
+      .select("id, role, content, created_at")
       .eq("section_id", sectionId)
       .order("created_at", { ascending: true });
 
@@ -381,8 +381,12 @@ export function useChat() {
           // streamed messages keep their client-generated UUID.
           responseId: m.role === "assistant" ? `db:${m.id}` : undefined,
           thinkingTrace: [],
+          // Historical messages don't carry model_used (column doesn't exist
+          // on messages table). Live SSE messages still receive modelUsed
+          // from the chat function's done event. Future schema bundle may
+          // add messages.model_used + chat function persistence for fuller
+          // historical analytics.
           isStreaming: false,
-          modelUsed: typeof m.model_used === "string" ? m.model_used : undefined,
         })),
         sectionId,
         loading: false,
