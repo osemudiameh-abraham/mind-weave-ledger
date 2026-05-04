@@ -7,6 +7,7 @@ import { Copy, ThumbsUp, ThumbsDown, Volume2, RefreshCw, Pencil, Square } from "
 import useTypewriter from "@/hooks/use-typewriter";
 import SevenLogo from "@/components/SevenLogo";
 import ThinkingTrace, { type ThinkingStep } from "@/components/ThinkingTrace";
+import Citations, { type ResearchSource } from "@/components/Citations";
 import { formatMessageTime } from "@/lib/format-message-time";
 import { supabase } from "@/lib/supabase";
 
@@ -42,6 +43,10 @@ interface TypewriterBubbleProps {
   /** Conversation id at the time of send. Captured into
    *  feedback_signals.context_at_time.conversation_id. */
   sectionId?: string | null;
+  /** Research sources from Gemini grounding (sec.10.10.5). Empty/undefined
+   *  when grounding didn't fire on this turn. Renders the Citations
+   *  component below the response when present. */
+  researchSources?: ResearchSource[];
   /** Callback to regenerate this assistant response. */
   onRegenerate?: () => void;
   /** Callback to edit-and-resend the user message above this assistant
@@ -179,6 +184,7 @@ const TypewriterBubble = ({
   modelUsed,
   contextUsed,
   sectionId,
+  researchSources,
   onRegenerate,
   onEdit,
 }: TypewriterBubbleProps) => {
@@ -365,6 +371,14 @@ const TypewriterBubble = ({
           />
         </>
       )}
+
+      {/* Source citations (sec.10.10.5). Renders below the response text
+          when Gemini grounding fired this turn. Distinct from ThinkingTrace
+          above: this lists the actual URLs Seven used; ThinkingTrace shows
+          how many sources were consulted. Empty array renders nothing. */}
+      {renderingComplete && researchSources && researchSources.length > 0 ? (
+        <Citations sources={researchSources} />
+      ) : null}
 
       {/* --- Per-message affordances (sec.10.10.6) -------------------- */}
       {/* Hover-revealed on desktop via group-hover; tap-to-show on mobile via
