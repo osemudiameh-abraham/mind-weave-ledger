@@ -398,8 +398,8 @@ const Home = () => {
                       contextUsed={msg.contextUsed}
                       sectionId={sectionId}
                       researchSources={msg.researchSources}
-                      onRegenerate={msg.responseId
-                        ? () => regenerate(msg.responseId!)
+                      onRegenerate={msg.responseId && userMsgAbove
+                        ? () => regenerate(msg.responseId!, userMsgAbove.text)
                         : undefined}
                       onEdit={msg.responseId && userMsgAbove
                         ? () => handleStartEdit(msg.responseId!, userMsgAbove.text)
