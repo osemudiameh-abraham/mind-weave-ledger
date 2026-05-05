@@ -341,33 +341,46 @@ export function useChat() {
    * sec.10.10.6). Drops the assistant message + everything after, then
    * re-submits the user message. Server will produce a new response.
    */
-  const regenerate = useCallback(async (assistantResponseId: string) => {
-    let userText: string | null = null;
+  /**
+   * Re-send the user message that preceded the given assistant message.
+   * Used by the per-message Regenerate affordance (Architecture v5.7
+   * sec.10.10.6).
+   *
+   * The caller (Home.tsx) passes userText explicitly because Home already
+   * knows the user message above each assistant message (it computes
+   * userMsgAbove for the Edit affordance). Passing userText as a parameter
+   * avoids a closure-mutation-inside-state-updater bug: state updater
+   * callbacks run when React flushes, NOT synchronously, so reading a value
+   * the updater wrote on the next line is unreliable. The fix is simple:
+   * the caller already has the text; pass it.
+   */
+  const regenerate = useCallback(async (assistantResponseId: string, userText: string) => {
+    if (!userText) return;
 
+    // Single synchronous truncation. Find the assistant message, drop it
+    // and the user message above it AND everything after. sendMessage will
+    // re-insert the user message as an optimistic stub and stream a new
+    // assistant response.
     setState((prev) => {
-      const idx = prev.messages.findIndex((m) => m.role === "ai" && m.responseId === assistantResponseId);
+      const idx = prev.messages.findIndex(
+        (m) => m.role === "ai" && m.responseId === assistantResponseId,
+      );
       if (idx === -1 || idx === 0) return prev;
       const userMsg = prev.messages[idx - 1];
       if (userMsg.role !== "user") return prev;
-      userText = userMsg.text;
-      // Drop the assistant message + anything after.
+      // Slice ends BEFORE the user message (idx - 1). sendMessage will add
+      // the user stub and the assistant stub itself.
       return {
         ...prev,
-        messages: prev.messages.slice(0, idx),
+        messages: prev.messages.slice(0, idx - 1),
       };
     });
 
-    if (userText) {
-      // Drop the user message too -- sendMessage will re-add it as optimistic.
-      setState((prev) => {
-        const msgs = [...prev.messages];
-        if (msgs.length > 0 && msgs[msgs.length - 1].role === "user" && msgs[msgs.length - 1].text === userText) {
-          msgs.pop();
-        }
-        return { ...prev, messages: msgs };
-      });
-      await sendMessage(userText);
-    }
+    // Send is fire-and-forget after the truncation. The new optimistic
+    // user message + assistant streaming stub will land via sendMessage's
+    // own setState. React batches our truncation with sendMessage's
+    // optimistic insert into a single visual update.
+    await sendMessage(userText);
   }, [sendMessage]);
 
   /**
