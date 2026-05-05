@@ -22,13 +22,15 @@ const LiveIllustration = ({ size = 180 }: LiveIllustrationProps) => (
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"
   >
-    {/* Aurora halo - purple accent, off-center for organic feel */}
+    {/* Warm halo - brand primary at low alpha, off-center for organic feel.
+        Matches MicrophoneIllustration's halo treatment for brand consistency
+        across onboarding sheets. */}
     <ellipse
       cx="92"
       cy="98"
       rx="58"
       ry="50"
-      fill="hsl(280 75% 60% / 0.40)"
+      fill="hsl(var(--primary) / 0.45)"
       transform="rotate(-12 92 98)"
     />
 
@@ -90,12 +92,13 @@ const LiveIllustration = ({ size = 180 }: LiveIllustrationProps) => (
       fill="hsl(var(--background))"
     />
 
-    {/* Top status light - small filled dot, on the camera body */}
+    {/* Top status light - small filled dot, on the camera body. Brand primary
+        for the "active sensing" cue. */}
     <circle
       cx="132"
       cy="78"
       r="3.5"
-      fill="hsl(280 75% 60%)"
+      fill="hsl(var(--primary))"
     />
 
     {/* Sparkle 1 - upper right, four-point star */}

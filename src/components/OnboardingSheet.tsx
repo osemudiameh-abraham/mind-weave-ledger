@@ -84,7 +84,7 @@ const OnboardingSheet = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
             transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed inset-0 z-[101] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:rounded-3xl bg-background flex flex-col overflow-hidden shadow-2xl"
+            className="fixed inset-0 z-[101] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[440px] sm:max-w-[calc(100vw-2rem)] sm:max-h-[min(720px,calc(100vh-2rem))] sm:rounded-3xl bg-background flex flex-col overflow-hidden shadow-2xl"
             style={{
               paddingTop: "env(safe-area-inset-top, 0px)",
               paddingBottom: "env(safe-area-inset-bottom, 0px)",
