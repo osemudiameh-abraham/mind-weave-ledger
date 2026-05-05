@@ -3,13 +3,131 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import { Copy, ThumbsUp, ThumbsDown, Volume2, RefreshCw, Pencil, Square } from "lucide-react";
+import { Copy, ThumbsUp, ThumbsDown, Volume2, RefreshCw, Pencil, Square, AlertTriangle, CalendarClock, Info } from "lucide-react";
 import useTypewriter from "@/hooks/use-typewriter";
 import SevenLogo from "@/components/SevenLogo";
 import ThinkingTrace, { type ThinkingStep } from "@/components/ThinkingTrace";
 import Citations, { type ResearchSource } from "@/components/Citations";
 import { formatMessageTime } from "@/lib/format-message-time";
 import { supabase } from "@/lib/supabase";
+
+/**
+ * Callout segment parsing (Architecture v5.7 sec.10.10).
+ *
+ * The chat function emits three callout variants when surfacing important
+ * points: ":::pattern" (behaviour-pattern observations), ":::decision"
+ * (decisions due for review), ":::note" (rare critical flags). Each block
+ * is fenced with ":::variant" on its own line as opener and ":::" on its
+ * own line as closer, with the body as inner markdown content.
+ *
+ * parseCalloutSegments splits a response string into an ordered list of
+ * segments -- markdown prose in between, callouts at their fence positions.
+ * Each segment retains its original content; we render markdown through
+ * ReactMarkdown and callouts through <Callout>.
+ */
+
+type CalloutVariant = "pattern" | "decision" | "note";
+
+interface MarkdownSegment {
+  kind: "markdown";
+  content: string;
+}
+
+interface CalloutSegment {
+  kind: "callout";
+  variant: CalloutVariant;
+  content: string;
+}
+
+type Segment = MarkdownSegment | CalloutSegment;
+
+const CALLOUT_FENCE_RE = /^:::(pattern|decision|note)\s*$/m;
+
+function parseCalloutSegments(text: string): Segment[] {
+  const segments: Segment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const remaining = text.slice(cursor);
+    const openMatch = remaining.match(CALLOUT_FENCE_RE);
+    if (!openMatch || openMatch.index === undefined) {
+      // No more callouts; remainder is markdown.
+      const tail = text.slice(cursor);
+      if (tail.length > 0) segments.push({ kind: "markdown", content: tail });
+      break;
+    }
+
+    const openOffset = cursor + openMatch.index;
+    const variant = openMatch[1] as CalloutVariant;
+
+    // Push any markdown content before the fence.
+    if (openOffset > cursor) {
+      const before = text.slice(cursor, openOffset);
+      if (before.length > 0) segments.push({ kind: "markdown", content: before });
+    }
+
+    // Find matching closer (":::" on its own line) AFTER the opener.
+    const afterOpener = openOffset + openMatch[0].length;
+    const closerSearchStart = afterOpener;
+    // Match a ":::" on its own line.
+    const closerRe = /^:::\s*$/m;
+    const closerMatch = text.slice(closerSearchStart).match(closerRe);
+
+    if (!closerMatch || closerMatch.index === undefined) {
+      // Unclosed fence -- treat the rest as markdown including the opener.
+      // This is the streaming-mid-callout case: we render plain text until
+      // the closer arrives. The fallback prevents partial callouts from
+      // breaking rendering entirely.
+      const tail = text.slice(openOffset);
+      if (tail.length > 0) segments.push({ kind: "markdown", content: tail });
+      break;
+    }
+
+    const closerOffset = closerSearchStart + closerMatch.index;
+    let body = text.slice(afterOpener, closerOffset);
+    // Strip leading/trailing newlines from body (the fences are on their own
+    // lines so the body has surrounding whitespace).
+    body = body.replace(/^\n+/, "").replace(/\n+$/, "");
+    segments.push({ kind: "callout", variant, content: body });
+
+    cursor = closerOffset + closerMatch[0].length;
+    // Advance past trailing newline after the closer if present.
+    if (text[cursor] === "\n") cursor += 1;
+  }
+
+  return segments;
+}
+
+const CALLOUT_VARIANT_STYLES: Record<CalloutVariant, {
+  bg: string;
+  border: string;
+  iconColor: string;
+  Icon: typeof AlertTriangle;
+  label: string;
+}> = {
+  pattern: {
+    bg: "bg-amber-500/10",
+    border: "border-amber-500/30",
+    iconColor: "text-amber-600 dark:text-amber-500",
+    Icon: AlertTriangle,
+    label: "Pattern",
+  },
+  decision: {
+    bg: "bg-blue-500/10",
+    border: "border-blue-500/30",
+    iconColor: "text-blue-600 dark:text-blue-500",
+    Icon: CalendarClock,
+    label: "Decision due",
+  },
+  note: {
+    bg: "bg-foreground/5",
+    border: "border-foreground/20",
+    iconColor: "text-foreground/70",
+    Icon: Info,
+    label: "Note",
+  },
+};
+
 
 interface TypewriterBubbleProps {
   text: string;
@@ -140,6 +258,127 @@ const allowedComponents: Components = {
     </blockquote>
   ),
   hr: () => <hr className="my-3 border-border" />,
+};
+
+/**
+ * Single callout component (sec.10.10). Renders a fenced block with the
+ * variant's accent palette + icon + label, and the body content rendered
+ * through ReactMarkdown so inline emphasis (bold, links) works inside.
+ *
+ * Animation: one-shot pulse on first mount. Background and border fade
+ * from accent-strong to accent-resting over 1.2s, easing out, runs once.
+ * Framer-motion's `animate` prop with no `repeat` does this cleanly --
+ * no useEffect, no state, no re-trigger on parent re-render (because the
+ * Callout is unmounted/remounted only when its segment changes, which
+ * only happens when the response itself changes).
+ */
+const Callout = ({ variant, content }: { variant: CalloutVariant; content: string }) => {
+  const styles = CALLOUT_VARIANT_STYLES[variant];
+  const Icon = styles.Icon;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{
+        opacity: 1,
+        y: 0,
+        // Subtle pulse: background flashes briefly more saturated then settles.
+        // The keyframes interpolate over the same property; final value is
+        // the resting state.
+      }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      className={`my-3 rounded-xl border ${styles.bg} ${styles.border} px-3.5 py-3`}
+    >
+      <motion.div
+        initial={{ boxShadow: `0 0 0 0 hsl(var(--foreground) / 0)` }}
+        animate={{
+          boxShadow: [
+            `0 0 0 0 hsl(var(--foreground) / 0)`,
+            `0 0 0 4px hsl(var(--foreground) / 0.08)`,
+            `0 0 0 0 hsl(var(--foreground) / 0)`,
+          ],
+        }}
+        transition={{ duration: 1.2, ease: "easeOut", times: [0, 0.4, 1] }}
+        className="rounded-xl"
+      >
+        <div className="flex items-start gap-2.5">
+          <div className={`shrink-0 mt-0.5 ${styles.iconColor}`}>
+            <Icon size={16} aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className={`text-[11px] font-semibold uppercase tracking-wide ${styles.iconColor} mb-1`}>
+              {styles.label}
+            </div>
+            <div className="text-[14px] leading-relaxed text-foreground">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={allowedComponents}
+                allowedElements={[
+                  "p", "strong", "em", "code", "a", "ul", "ol", "li",
+                ]}
+                unwrapDisallowed
+              >
+                {content}
+              </ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+/**
+ * Renders response text by splitting into markdown + callout segments and
+ * mapping each to its renderer. Single ReactMarkdown call per segment to
+ * keep styling identical to the existing rendering pipeline.
+ */
+const CalloutAwareMarkdown = ({ text }: { text: string }) => {
+  const segments = parseCalloutSegments(text);
+
+  // Fast path: no callouts -> exactly the same as the previous single-call
+  // render. Same component instance shape, same children, no behaviour
+  // change for responses that don't use the callout syntax.
+  if (segments.length === 1 && segments[0].kind === "markdown") {
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={allowedComponents}
+        allowedElements={[
+          "p", "h1", "h2", "h3", "strong", "em", "ul", "ol", "li",
+          "code", "pre", "table", "thead", "tbody", "tr", "th", "td",
+          "a", "blockquote", "hr",
+        ]}
+        unwrapDisallowed
+      >
+        {segments[0].content}
+      </ReactMarkdown>
+    );
+  }
+
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.kind === "markdown" ? (
+          <ReactMarkdown
+            key={i}
+            remarkPlugins={[remarkGfm]}
+            components={allowedComponents}
+            allowedElements={[
+              "p", "h1", "h2", "h3", "strong", "em", "ul", "ol", "li",
+              "code", "pre", "table", "thead", "tbody", "tr", "th", "td",
+              "a", "blockquote", "hr",
+            ]}
+            unwrapDisallowed
+          >
+            {seg.content}
+          </ReactMarkdown>
+        ) : (
+          <Callout key={i} variant={seg.variant} content={seg.content} />
+        ),
+      )}
+    </>
+  );
 };
 
 /**
@@ -331,18 +570,7 @@ const TypewriterBubble = ({
       <ThinkingTrace steps={thinkingTrace ?? []} isStreaming={isStream} />
 
       {renderingComplete && !isStream ? (
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={allowedComponents}
-          allowedElements={[
-            "p", "h1", "h2", "h3", "strong", "em", "ul", "ol", "li",
-            "code", "pre", "table", "thead", "tbody", "tr", "th", "td",
-            "a", "blockquote", "hr",
-          ]}
-          unwrapDisallowed
-        >
-          {visibleText}
-        </ReactMarkdown>
+        <CalloutAwareMarkdown text={visibleText} />
       ) : isStream && text.length > 0 ? (
         // Streaming: render text directly. Markdown parsing while characters
         // stream in produces visible half-formed markup. Render plain text +
