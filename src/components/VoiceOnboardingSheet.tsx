@@ -85,7 +85,7 @@ const VoiceOnboardingSheet = ({ open, onContinue, onClose }: VoiceOnboardingShee
           role="dialog"
           aria-modal="true"
           aria-label="Choose speech language"
-          className="fixed inset-0 z-[110] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md sm:rounded-3xl bg-background flex flex-col overflow-hidden shadow-2xl"
+          className="fixed inset-0 z-[110] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[440px] sm:max-w-[calc(100vw-2rem)] sm:max-h-[min(720px,calc(100vh-2rem))] sm:rounded-3xl bg-background flex flex-col overflow-hidden shadow-2xl"
           style={{
             paddingTop: "env(safe-area-inset-top, 0px)",
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
