@@ -2,7 +2,14 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, MicOff, Send, Plus, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import LiveButton from "./LiveButton";
+import VoiceOnboardingSheet from "./VoiceOnboardingSheet";
 import { useDeepgramDictation } from "@/hooks/use-deepgram-dictation";
+import {
+  evaluateVoiceOnboarding,
+  markOnboardingDismissed,
+  markSurfaceUsed,
+  type OnboardingDecision,
+} from "@/lib/onboarding-triggers";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
@@ -27,9 +34,49 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   const [value, setValue] = useState("");
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [voiceSheet, setVoiceSheet] = useState<OnboardingDecision | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasText = value.trim().length > 0;
+
+  // ---------------------------------------------------------------------
+  // Voice onboarding sheet (sec.4.13 v2 -- intent-triggered).
+  // The mic onClick is intercepted: if onboarding-triggers says we should
+  // show the sheet for this user (first-time / post-update / long-absence),
+  // open it instead of starting recording. Recording starts on Continue.
+  // If already-recording (toggle off) or sheet conditions don't fire, mic
+  // click goes straight to setRecording toggle (preserves existing UX).
+  // ---------------------------------------------------------------------
+  const handleMicClick = useCallback(() => {
+    // Stopping a recording in progress -- never show the sheet, just stop.
+    if (recording) {
+      setRecording(false);
+      return;
+    }
+    // Starting fresh -- evaluate the trigger.
+    const decision = evaluateVoiceOnboarding();
+    if (decision.shouldShow) {
+      setVoiceSheet(decision);
+      return;
+    }
+    // No sheet needed. Mark used (so future evals know the user has used
+    // voice) and start recording immediately.
+    markSurfaceUsed("voice");
+    setRecording(true);
+  }, [recording]);
+
+  const handleVoiceSheetContinue = useCallback(() => {
+    if (voiceSheet) markOnboardingDismissed(voiceSheet);
+    markSurfaceUsed("voice");
+    setVoiceSheet(null);
+    setRecording(true);
+  }, [voiceSheet]);
+
+  const handleVoiceSheetClose = useCallback(() => {
+    if (voiceSheet) markOnboardingDismissed(voiceSheet);
+    setVoiceSheet(null);
+    // User declined. Do NOT start recording.
+  }, [voiceSheet]);
 
   useEffect(() => {
     if (inputRef.current) {
@@ -143,6 +190,7 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   };
 
   return (
+    <>
     <div
       className="fixed left-0 right-0 z-40 px-3 pb-2 bg-background"
       style={{ bottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}
@@ -201,7 +249,7 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             <>
               <button
                 type="button"
-                onClick={() => setRecording((r) => !r)}
+                onClick={handleMicClick}
                 className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors shrink-0 mb-0.5 ${
                   recording ? "bg-destructive/15 text-destructive animate-pulse" : "text-muted-foreground hover:bg-muted"
                 }`}
@@ -216,6 +264,13 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
         </div>
       </div>
     </div>
+
+    <VoiceOnboardingSheet
+      open={voiceSheet !== null}
+      onContinue={handleVoiceSheetContinue}
+      onClose={handleVoiceSheetClose}
+    />
+    </>
   );
 };
 

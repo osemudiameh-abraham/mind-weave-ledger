@@ -18,6 +18,13 @@ import { useChat } from "@/hooks/use-chat";
 import { supabase } from "@/lib/supabase";
 import { Loader2, ArrowDown, X, Check } from "lucide-react";
 import { unlockMobileAudio } from "@/services/live/RealLiveService";
+import LiveOnboardingSheet from "@/components/LiveOnboardingSheet";
+import {
+  evaluateLiveOnboarding,
+  markOnboardingDismissed,
+  markSurfaceUsed,
+  type OnboardingDecision,
+} from "@/lib/onboarding-triggers";
 
 const suggestions = [
   "What patterns did I show this week?",
@@ -61,6 +68,39 @@ const Home = () => {
   // message opens an inline editor on the user message above it. Holds the
   // assistantResponseId being edited + the staged new text.
   const [editing, setEditing] = useState<{ assistantResponseId: string; text: string } | null>(null);
+
+  // ---------------------------------------------------------------------
+  // Live onboarding sheet (sec.4.13 v2 -- intent-triggered).
+  // The Live button onClick is intercepted: if onboarding-triggers says we
+  // should show the sheet, open it instead of navigating. Navigation happens
+  // on Continue. If trigger doesn't fire, navigate immediately.
+  // ---------------------------------------------------------------------
+  const [liveSheet, setLiveSheet] = useState<OnboardingDecision | null>(null);
+
+  const handleLiveIntent = useCallback(() => {
+    unlockMobileAudio();
+    const decision = evaluateLiveOnboarding();
+    if (decision.shouldShow) {
+      setLiveSheet(decision);
+      return;
+    }
+    // No sheet needed. Mark used (so future evals know) and navigate.
+    markSurfaceUsed("live");
+    navigate("/live");
+  }, [navigate]);
+
+  const handleLiveSheetContinue = useCallback(() => {
+    if (liveSheet) markOnboardingDismissed(liveSheet);
+    markSurfaceUsed("live");
+    setLiveSheet(null);
+    navigate("/live");
+  }, [liveSheet, navigate]);
+
+  const handleLiveSheetClose = useCallback(() => {
+    if (liveSheet) markOnboardingDismissed(liveSheet);
+    setLiveSheet(null);
+    // User declined. Do NOT navigate.
+  }, [liveSheet]);
 
   // --- Smart auto-scroll (Architecture Section 10.5) ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -444,11 +484,14 @@ const Home = () => {
         )}
       </AnimatePresence>
 
-      <ChatInput onSend={handleSend} onLive={() => {
-        unlockMobileAudio();
-        navigate("/live");
-      }} />
+      <ChatInput onSend={handleSend} onLive={handleLiveIntent} />
       <BottomNav />
+
+      <LiveOnboardingSheet
+        open={liveSheet !== null}
+        onContinue={handleLiveSheetContinue}
+        onClose={handleLiveSheetClose}
+      />
 
       <TrialOfferDialog
         open={shouldShowPopup}
