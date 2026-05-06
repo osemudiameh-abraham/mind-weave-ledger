@@ -211,6 +211,14 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
     active: recording,
     onInterim,
     onFinal,
+    onError: (msg) => {
+      // Surface dictation failures to the user as a toast so they're not
+      // left wondering why "Listening..." goes nowhere. Also flip recording
+      // back off so the UI doesn't stay stuck in the active state.
+      console.error("[ChatInput] dictation error:", msg);
+      toast.error(msg);
+      setRecording(false);
+    },
   });
 
   /**
