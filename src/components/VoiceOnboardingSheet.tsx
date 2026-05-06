@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Mic, Globe } from "lucide-react";
 import OnboardingSheet from "./OnboardingSheet";
-import MicrophoneIllustration from "./MicrophoneIllustration";
+import MicrophoneIllustration from "./illustrations/MicrophoneIllustration";
 import LanguagePickerSheet from "./LanguagePickerSheet";
 import {
   getVoiceLanguage,
