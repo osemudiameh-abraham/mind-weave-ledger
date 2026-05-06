@@ -66,21 +66,33 @@ export function useDeepgramDictation({
 
     const start = async () => {
       try {
+        console.log("[DICTATION:1] start() called, language:", getVoiceLanguage());
+
         // 1. Get Deepgram token. Pass the user's chosen voice language so the
         //    Edge Function picks the right Deepgram model + language param
         //    (sec.4.6 + sec.4.14.4). Picker UI in PR #37 stored the choice in
         //    localStorage; we read it here and forward it. Default is "en"
         //    when nothing has been chosen yet.
         const language = getVoiceLanguage();
+        console.log("[DICTATION:2] invoking voice-stt with language:", language);
         const tokenRes = await supabase.functions.invoke("voice-stt", { body: { language } });
+        console.log("[DICTATION:3] voice-stt invoke returned:", {
+          hasError: !!tokenRes.error,
+          errorMsg: tokenRes.error?.message,
+          hasUrl: !!tokenRes.data?.url,
+          hasKey: !!tokenRes.data?.key,
+        });
         if (cancelled) return;
 
         if (tokenRes.error || !tokenRes.data?.url || !tokenRes.data?.key) {
-          onErrorRef.current?.("Voice service unavailable");
+          const detail = tokenRes.error?.message || "no url or key in response";
+          console.error("[DICTATION:3-FAIL]", detail);
+          onErrorRef.current?.(`Voice service unavailable: ${detail}`);
           return;
         }
 
         // 2. Get microphone
+        console.log("[DICTATION:4] requesting microphone permission");
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -89,9 +101,11 @@ export function useDeepgramDictation({
             sampleRate: { ideal: 16000 },
           },
         });
+        console.log("[DICTATION:5] microphone acquired, tracks:", stream.getTracks().length);
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
 
         // 3. Open Deepgram WebSocket
+        console.log("[DICTATION:6] opening Deepgram WebSocket");
         socket = new WebSocket(tokenRes.data.url, ["token", tokenRes.data.key]);
         socket.binaryType = "arraybuffer";
 
@@ -100,9 +114,11 @@ export function useDeepgramDictation({
           socket!.onopen = () => { clearTimeout(timeout); resolve(); };
           socket!.onerror = () => { clearTimeout(timeout); reject(new Error("Connection failed")); };
         });
+        console.log("[DICTATION:7] WebSocket open");
         if (cancelled) return;
 
         // 4. Set up audio capture
+        console.log("[DICTATION:8] setting up audio capture");
         audioContext = new AudioContext({ sampleRate: 16000 });
         const source = audioContext.createMediaStreamSource(stream);
         processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -125,6 +141,7 @@ export function useDeepgramDictation({
 
         source.connect(processor);
         processor.connect(audioContext.destination);
+        console.log("[DICTATION:9] audio pipeline live, ready for transcripts");
 
         // 5. Handle Deepgram messages
         socket.onmessage = (event: MessageEvent) => {
@@ -167,13 +184,15 @@ export function useDeepgramDictation({
           }
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
+          console.log("[DICTATION:close] WebSocket closed", { code: event.code, reason: event.reason, wasClean: event.wasClean });
           // Flush any remaining text
           const full = parts.splice(0).join(" ").trim();
           if (full) onFinalRef.current(full);
         };
 
-        socket.onerror = () => {
+        socket.onerror = (event) => {
+          console.error("[DICTATION:ws-error] WebSocket error event:", event);
           onErrorRef.current?.("Voice connection error");
         };
 
@@ -185,8 +204,9 @@ export function useDeepgramDictation({
         }, 8000);
 
       } catch (err) {
-        console.error("[DICTATION] Failed:", err);
-        onErrorRef.current?.("Microphone access denied or voice service unavailable");
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[DICTATION:catch] Pipeline failed:", msg, err);
+        onErrorRef.current?.(`Voice failed: ${msg}`);
       }
     };
 
