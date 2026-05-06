@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { getVoiceLanguage } from "@/lib/onboarding-triggers";
 
 interface UseDeepgramDictationOptions {
   active: boolean;
@@ -65,8 +66,13 @@ export function useDeepgramDictation({
 
     const start = async () => {
       try {
-        // 1. Get Deepgram token
-        const tokenRes = await supabase.functions.invoke("voice-stt", { body: {} });
+        // 1. Get Deepgram token. Pass the user's chosen voice language so the
+        //    Edge Function picks the right Deepgram model + language param
+        //    (sec.4.6 + sec.4.14.4). Picker UI in PR #37 stored the choice in
+        //    localStorage; we read it here and forward it. Default is "en"
+        //    when nothing has been chosen yet.
+        const language = getVoiceLanguage();
+        const tokenRes = await supabase.functions.invoke("voice-stt", { body: { language } });
         if (cancelled) return;
 
         if (tokenRes.error || !tokenRes.data?.url || !tokenRes.data?.key) {
