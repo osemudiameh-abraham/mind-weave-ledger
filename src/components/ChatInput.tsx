@@ -4,11 +4,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import LiveButton from "./LiveButton";
 import VoiceOnboardingSheet from "./VoiceOnboardingSheet";
 import DocumentPickerSheet from "./DocumentPickerSheet";
+import LanguagePickerSheet from "./LanguagePickerSheet";
 import { useDeepgramDictation } from "@/hooks/use-deepgram-dictation";
 import {
   evaluateVoiceOnboarding,
   markOnboardingDismissed,
   markSurfaceUsed,
+  getVoiceLanguage,
   type OnboardingDecision,
 } from "@/lib/onboarding-triggers";
 import { supabase } from "@/lib/supabase";
@@ -79,6 +81,14 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
   const [voiceSheet, setVoiceSheet] = useState<OnboardingDecision | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
+  // Voice language state. Reads from localStorage on mount via getVoiceLanguage
+  // (defaults to "en" when nothing has been picked yet). Updated when the user
+  // picks a different language via the chip-triggered LanguagePickerSheet.
+  // Architecture v5.7 sec.4.14.4 + sec.1.5: the chip near the mic shows which
+  // language Seven is currently listening for, and is always-tappable so the
+  // user can change it without waiting for the onboarding sheet to re-trigger.
+  const [language, setLanguage] = useState(() => getVoiceLanguage());
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasText = value.trim().length > 0;
   const hasStaged = stagedFiles.length > 0;
@@ -394,6 +404,22 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
             </motion.button>
           ) : (
             <>
+              {/* Language chip -- always visible (when not recording) so the
+                  user can always see and change which language Seven is
+                  listening for. Architecture v5.7 sec.4.14.4 + sec.1.5
+                  (Substrate Visibility Principle). Hidden while recording
+                  so the active state isn't cluttered, hidden while files
+                  are staging to give the chip-row above room. */}
+              {!recording && !hasStaged ? (
+                <button
+                  type="button"
+                  onClick={() => setLanguagePickerOpen(true)}
+                  aria-label={`Speech language: ${language.toUpperCase()}. Tap to change.`}
+                  className="h-7 px-2 rounded-full flex items-center justify-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted transition-colors shrink-0 mb-1.5"
+                >
+                  {language.toUpperCase()}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleMicClick}
@@ -422,6 +448,13 @@ const ChatInput = ({ onSend, onLive }: ChatInputProps) => {
       open={pickerOpen}
       onPick={handlePickerFile}
       onClose={() => setPickerOpen(false)}
+    />
+
+    <LanguagePickerSheet
+      open={languagePickerOpen}
+      currentLanguage={language}
+      onSelect={(code) => setLanguage(code)}
+      onClose={() => setLanguagePickerOpen(false)}
     />
     </>
   );
