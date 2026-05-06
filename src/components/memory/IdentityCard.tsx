@@ -92,7 +92,7 @@ const DeclaredIdentitySubCard = ({ profile }: { profile: IdentityProfile | null 
   const rows: { label: string; value: string | null; hint: string }[] = [
     {
       label: "Name",
-      value: profile?.self_name ?? null,
+      value: profile?.display_name ?? null,
       hint: "Tell Seven your name in chat",
     },
     {
