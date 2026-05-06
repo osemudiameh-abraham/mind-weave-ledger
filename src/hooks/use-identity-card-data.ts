@@ -153,11 +153,19 @@ export function useIdentityCardData(): UseIdentityCardDataResult {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) return { ok: false, error: "Not signed in" };
 
+        // The feedback_signals table is shared infrastructure created by Phase
+        // 0.C Stage 1 (PR #28 era) for per-message thumbs up/down. We reuse it
+        // for identity-model field feedback by writing the signal value
+        // ('identity_correct' | 'identity_misframed') into the existing
+        // 'signal' column and tagging the row with a 'memory_identity_card'
+        // surface. The field name being judged lives in response_metadata.
+        // cron-identity-model filters by surface to find these rows.
         const { error: insertError } = await supabase.from("feedback_signals").insert({
           user_id: user.id,
-          kind,
-          target_field: field,
-          context_snapshot: contextValue !== undefined ? { value: contextValue } : {},
+          signal: kind,
+          surface: "memory_identity_card",
+          response_metadata: { target_field: field },
+          context_at_time: contextValue !== undefined ? { value: contextValue } : {},
         });
 
         if (insertError) {
