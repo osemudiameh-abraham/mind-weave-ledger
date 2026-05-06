@@ -44,14 +44,12 @@ export function useDeepgramDictation({
     let audioContext: AudioContext | null = null;
     let processor: ScriptProcessorNode | null = null;
     let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
-    let turnTakingTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
 
     const parts: string[] = [];
 
     const cleanup = () => {
       cancelled = true;
-      if (turnTakingTimer) clearTimeout(turnTakingTimer);
       if (keepaliveTimer) clearInterval(keepaliveTimer);
       processor?.disconnect();
       if (audioContext && audioContext.state !== "closed") {
@@ -154,33 +152,32 @@ export function useDeepgramDictation({
             const transcript = msg.channel?.alternatives?.[0]?.transcript || "";
 
             if (!msg.is_final) {
-              // Interim: show accumulated parts + current interim
+              // Interim transcript: show accumulated parts + current interim
+              // text in the input field. The user sees their words form in
+              // real time as Deepgram processes audio.
               const current = parts.join(" ");
               onInterimRef.current((current + " " + transcript).trim());
               return;
             }
 
-            // Final result
+            // Final transcript for this utterance: lock it into parts[] and
+            // refresh the display. Under the voice-typing model (sec.10.5),
+            // we do NOT call onFinal here -- pauses are not session-end. The
+            // mic stays open across pauses; user controls end via tap-to-stop.
+            // onFinal fires only from socket.onclose (session genuinely ends).
             if (transcript.trim()) {
-              if (turnTakingTimer) { clearTimeout(turnTakingTimer); turnTakingTimer = null; }
               parts.push(transcript.trim());
               onInterimRef.current(parts.join(" "));
-            }
-
-            if (msg.speech_final) {
-              // 700ms turn-taking timer: wait for user to finish speaking
-              if (turnTakingTimer) clearTimeout(turnTakingTimer);
-              turnTakingTimer = setTimeout(() => {
-                const full = parts.splice(0).join(" ").trim();
-                if (full) onFinalRef.current(full);
-              }, 700);
             }
           }
 
           if (msg.type === "UtteranceEnd") {
-            if (turnTakingTimer) { clearTimeout(turnTakingTimer); turnTakingTimer = null; }
-            const full = parts.splice(0).join(" ").trim();
-            if (full) onFinalRef.current(full);
+            // Deepgram detected end-of-utterance (silence threshold reached).
+            // Under voice-typing semantics this is just a silence boundary,
+            // not a session-end signal. Any pending interim has already
+            // committed to parts[] via the is_final=true path above.
+            // Intentionally a no-op: no timer, no onFinal call. The session
+            // continues; the user stays in control of when it ends.
           }
         };
 
