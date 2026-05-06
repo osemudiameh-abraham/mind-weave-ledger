@@ -28,7 +28,7 @@ import { supabase } from "@/lib/supabase";
  */
 
 export interface IdentityProfile {
-  self_name: string | null;
+  display_name: string | null;
   self_role: string | null;
   self_company: string | null;
   self_city: string | null;
@@ -88,7 +88,7 @@ export function useIdentityCardData(): UseIdentityCardDataResult {
       const [profileRes, modelRes] = await Promise.all([
         supabase
           .from("identity_profiles")
-          .select("self_name, self_role, self_company, self_city, goals, focus_areas")
+          .select("display_name, self_role, self_company, self_city, goals, focus_areas")
           .eq("user_id", user.id)
           .maybeSingle(),
         supabase
@@ -106,7 +106,7 @@ export function useIdentityCardData(): UseIdentityCardDataResult {
       setProfile(
         profileRes.data
           ? {
-              self_name: profileRes.data.self_name ?? null,
+              display_name: profileRes.data.display_name ?? null,
               self_role: profileRes.data.self_role ?? null,
               self_company: profileRes.data.self_company ?? null,
               self_city: profileRes.data.self_city ?? null,
