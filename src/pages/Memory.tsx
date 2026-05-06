@@ -2,37 +2,16 @@ import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, Clock, TrendingUp, Shield } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
+import IdentityCard from "@/components/memory/IdentityCard";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { PageError } from "@/components/PageError";
 import { MemorySkeleton } from "@/components/PageSkeletons";
 
-interface DecisionRow {
-  title: string;
-  status: string;
-  created_at: string;
-  outcome_count: number;
-}
-
-interface PatternRow {
-  description: string;
-  confidence: number;
-  evidence_count: number;
-  created_at: string;
-}
-
-interface FactRow {
-  subject: string;
-  attribute: string;
-  value_text: string;
-  source_type: string;
-  created_at: string;
-  confidence: number;
-}
-
-interface OutcomeRow {
-  outcome_label: string;
-}
+interface DecisionRow { title: string; status: string; created_at: string; outcome_count: number; }
+interface PatternRow { description: string; confidence: number; evidence_count: number; created_at: string; }
+interface FactRow { subject: string; attribute: string; value_text: string; source_type: string; created_at: string; confidence: number; }
+interface OutcomeRow { outcome_label: string; }
 
 const Memory = () => {
   const { user } = useAuth();
@@ -47,7 +26,6 @@ const Memory = () => {
     if (!user) return;
     setLoading(true);
     setLoadError(null);
-
     try {
       const [decRes, patRes, factRes, outcomeRes] = await Promise.all([
         supabase.from("decisions").select("title:text_snapshot, status, created_at, outcome_count").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
@@ -55,18 +33,15 @@ const Memory = () => {
         supabase.from("memory_facts").select("subject, attribute, value_text, source_type, created_at, confidence").eq("user_id", user.id).is("valid_until", null).order("created_at", { ascending: false }).limit(10),
         supabase.from("outcomes").select("outcome_label").eq("user_id", user.id),
       ]);
-
       const firstError = decRes.error || patRes.error || factRes.error || outcomeRes.error;
       if (firstError) {
         setLoadError(firstError);
         setLoading(false);
         return;
       }
-
       setDecisions((decRes.data as DecisionRow[]) || []);
       setPatterns((patRes.data as PatternRow[]) || []);
       setFacts((factRes.data as FactRow[]) || []);
-
       // Calculate stats
       const outcomes = (outcomeRes.data as OutcomeRow[]) || [];
       const worked = outcomes.filter((o) => o.outcome_label === "worked").length;
@@ -76,7 +51,6 @@ const Memory = () => {
         patternAwareness: Math.min(100, (patRes.data?.length || 0) * 15),
         decisionQuality: total > 0 ? Math.round((worked / total) * 100) : 0,
       });
-
       setLoading(false);
     } catch (err) {
       setLoadError(err as Error);
@@ -102,12 +76,7 @@ const Memory = () => {
   if (loadError) {
     return (
       <AppLayout>
-        <PageError
-          title="Unable to load memory"
-          message="We couldn't load your cognitive profile right now. Please try again."
-          onRetry={load}
-          error={loadError}
-        />
+        <PageError title="Unable to load memory" message="We couldn't load your cognitive profile right now. Please try again." onRetry={load} error={loadError} />
       </AppLayout>
     );
   }
@@ -116,8 +85,7 @@ const Memory = () => {
 
   return (
     <AppLayout>
-      <div
-        className="px-4 max-w-[780px] mx-auto"
+      <div className="px-4 max-w-[780px] mx-auto"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",
           paddingBottom: "calc(env(safe-area-inset-bottom) + 6rem)",
@@ -128,10 +96,17 @@ const Memory = () => {
           <p className="text-[14px] text-muted-foreground mt-1">Your cognitive profile as Seven understands it</p>
         </motion.div>
 
+        {/* Identity Card -- always visible (architecture v5.7 sec.10.13.1).
+            Shows what the user told Seven directly + what Seven inferred,
+            with affordances for the user to confirm/correct inferred fields.
+            Manages its own loading/empty states internally so a sparse model
+            still produces a meaningful surface for new users. */}
+        <IdentityCard />
+
         {isEmpty ? (
           <div className="text-center py-12">
             <p className="text-[14px] text-muted-foreground max-w-[420px] mx-auto leading-relaxed">
-              Your memory is empty. Seven will remember things as you chat.
+              No decisions or patterns tracked yet. Seven will surface these here as you chat.
             </p>
           </div>
         ) : (
@@ -154,7 +129,8 @@ const Memory = () => {
             {decisions.length > 0 && (
               <div className="mb-6">
                 <h2 className="text-[15px] font-medium text-foreground mb-3 flex items-center gap-2">
-                  <TrendingUp size={16} className="text-primary" aria-hidden="true" /> Recent Decisions
+                  <TrendingUp size={16} className="text-primary" aria-hidden="true" />
+                  Recent Decisions
                 </h2>
                 <div className="flex flex-col gap-2">
                   {decisions.map((d, i) => (
@@ -176,7 +152,8 @@ const Memory = () => {
             {patterns.length > 0 && (
               <div className="mb-6">
                 <h2 className="text-[15px] font-medium text-foreground mb-3 flex items-center gap-2">
-                  <Shield size={16} className="text-purple-500" aria-hidden="true" /> Detected Patterns
+                  <Shield size={16} className="text-purple-500" aria-hidden="true" />
+                  Detected Patterns
                 </h2>
                 <div className="flex flex-col gap-2">
                   {patterns.map((p, i) => (
@@ -196,7 +173,8 @@ const Memory = () => {
             {facts.length > 0 && (
               <div>
                 <h2 className="text-[15px] font-medium text-foreground mb-3 flex items-center gap-2">
-                  <CheckCircle size={16} className="text-green-500" aria-hidden="true" /> Known Facts
+                  <CheckCircle size={16} className="text-green-500" aria-hidden="true" />
+                  Known Facts
                 </h2>
                 <div className="flex flex-col gap-2">
                   {facts.map((f, i) => (
