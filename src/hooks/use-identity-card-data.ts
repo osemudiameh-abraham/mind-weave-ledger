@@ -155,16 +155,23 @@ export function useIdentityCardData(): UseIdentityCardDataResult {
 
         // The feedback_signals table is shared infrastructure created by Phase
         // 0.C Stage 1 (PR #28 era) for per-message thumbs up/down. We reuse it
-        // for identity-model field feedback by writing the signal value
-        // ('identity_correct' | 'identity_misframed') into the existing
-        // 'signal' column and tagging the row with a 'memory_identity_card'
-        // surface. The field name being judged lives in response_metadata.
-        // cron-identity-model filters by surface to find these rows.
+        // for identity-model field feedback by mapping the internal feedback
+        // kind ('identity_correct' -> 'positive', 'identity_misframed' ->
+        // 'negative') and tagging the row with surface='memory_identity_card'.
+        // This preserves the table's original design where signal is direction
+        // and surface is source. cron-identity-model filters by surface to
+        // find identity-card feedback rows. The original 'kind' name is kept
+        // in response_metadata.intent so future analytics can distinguish a
+        // thumbs-down on a chat message from a thumbs-down on an identity
+        // field even though both have signal='negative'.
+        const signalDirection: "positive" | "negative" =
+          kind === "identity_correct" ? "positive" : "negative";
+
         const { error: insertError } = await supabase.from("feedback_signals").insert({
           user_id: user.id,
-          signal: kind,
+          signal: signalDirection,
           surface: "memory_identity_card",
-          response_metadata: { target_field: field },
+          response_metadata: { target_field: field, intent: kind },
           context_at_time: contextValue !== undefined ? { value: contextValue } : {},
         });
 
