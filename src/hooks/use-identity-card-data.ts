@@ -157,10 +157,13 @@ export function useIdentityCardData(): UseIdentityCardDataResult {
         // 0.C Stage 1 (PR #28 era) for per-message thumbs up/down. We reuse it
         // for identity-model field feedback by mapping the internal feedback
         // kind ('identity_correct' -> 'positive', 'identity_misframed' ->
-        // 'negative') and tagging the row with surface='memory_identity_card'.
+        // 'negative') and tagging the row with surface='memory' (the Memory
+        // Surface domain per architecture sec.10.13; panel identity --
+        // Identity Card vs Decision Ledger vs Active Patterns etc. -- is
+        // carried in response_metadata.target_field, not in surface).
         // This preserves the table's original design where signal is direction
         // and surface is source. cron-identity-model filters by surface to
-        // find identity-card feedback rows. The original 'kind' name is kept
+        // find Memory Surface feedback rows. The original 'kind' name is kept
         // in response_metadata.intent so future analytics can distinguish a
         // thumbs-down on a chat message from a thumbs-down on an identity
         // field even though both have signal='negative'.
@@ -170,7 +173,7 @@ export function useIdentityCardData(): UseIdentityCardDataResult {
         const { error: insertError } = await supabase.from("feedback_signals").insert({
           user_id: user.id,
           signal: signalDirection,
-          surface: "memory_identity_card",
+          surface: "memory",
           response_metadata: { target_field: field, intent: kind },
           context_at_time: contextValue !== undefined ? { value: contextValue } : {},
         });
