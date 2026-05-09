@@ -96,12 +96,12 @@ serve(async (req) => {
           // Fetch user data for analysis
           const [decisionsRes, outcomesRes, memoriesRes, factsRes] = await Promise.all([
             supabase.from("decisions")
-              .select("title, context_summary, status, confidence, review_due_at, outcome_count, created_at")
+              .select("text_snapshot, context_summary, status, confidence, review_due_at, outcome_count, created_at")
               .eq("user_id", userId)
               .gte("created_at", ninetyDaysAgo)
               .order("created_at", { ascending: false }),
             supabase.from("outcomes")
-              .select("decision_id, outcome_label, reflection, created_at")
+              .select("decision_id, outcome_label, text_snapshot, created_at")
               .eq("user_id", userId)
               .gte("created_at", ninetyDaysAgo)
               .order("created_at", { ascending: false }),
@@ -128,11 +128,11 @@ serve(async (req) => {
 
           // Build analysis input
           const decisionSummary = decisions.map((d) =>
-            `[${new Date(d.created_at).toLocaleDateString()}] "${d.title}" (status: ${d.status}, outcomes: ${d.outcome_count})${d.context_summary ? ` — ${d.context_summary}` : ""}`
+            `[${new Date(d.created_at).toLocaleDateString()}] "${d.text_snapshot}" (status: ${d.status}, outcomes: ${d.outcome_count})${d.context_summary ? ` — ${d.context_summary}` : ""}`
           ).join("\n");
 
           const outcomeSummary = outcomes.map((o) =>
-            `Decision outcome: ${o.outcome_label}${o.reflection ? ` — ${o.reflection}` : ""}`
+            `Decision outcome: ${o.outcome_label}${o.text_snapshot ? ` — ${o.text_snapshot}` : ""}`
           ).join("\n");
 
           const memorySummary = memories.slice(0, 50).map((m) => m.text).join("\n");
