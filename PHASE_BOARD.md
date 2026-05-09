@@ -11,71 +11,53 @@ blocked. Update at session end as part of the SESSION_LOG handoff.
 **Phase 0.C — Stage 2 (UI surfacing of substrate intelligence)**
 
 Stage 1 closed 2026-05-05 with PR #41 (per architecture v5.7 §14 build
-history). Stage 2 priorities per architecture line 1567:
+history). Stage 2 priorities per architecture line 1567 (corrected
+labelling):
 
-1. Proactive surfacing in chat (§10.7.A) — **in progress**
+1. Proactive surfacing in chat (§10.7.A) — **in progress (Stage 2A)**
 2. Decision Moments (§10.7.B) — pending Stage 2 mid-cycle
 3. Voice-mode parity for new surfaces — pending
 4. Memory Surface (§10.13) full build — Identity Card panel shipped
-   2026-05-08 (PR #46/47/48 + lessons #49); remaining panels pending
-   §10.13.2-10.13.6
+   2026-05-08 (PR #46 merged to **main**, live on sevenmynd.com);
+   remaining panels pending §10.13.2-10.13.6
 5. Hybrid background + live location subsystem (§17.6.A) full ship —
    pending
 
 ## Current sub-stage
 
-**Stage 2A-prereq — fix cron-pattern-detection + schedule it**
+**Stage 2A — Proactive Surfacing gates wired onto the existing chat
+prototype.**
 
-The chat function already has a baseline proactive-surfacing prototype
-(chat/index.ts:2271-2336), but the substrate it depends on
-(`behaviour_patterns`) is empty because:
+2A-prereq closed 2026-05-09. Cron infrastructure is now functional:
+- `cron-pattern-detection` redeployed (v19, ACTIVE) with the column-drift
+  fix (`decisions.text_snapshot`, `outcomes.text_snapshot`)
+- `pg_cron` job `cron-pattern-detection-daily-0600-utc` was scheduled,
+  then **PAUSED 2026-05-09 03:14 UTC** via `cron.unschedule(...)`
+  pending Stage 2A PR-5 (cron `_synthetic`-aware filter — see expanded
+  PR-5 scope below). Pause prevents the stale-retire query
+  (`is_active=true AND scan_id != current_run_scan_id → set
+  is_active=false`) from corrupting the synthetic Stage 2A seeds on
+  its next 06:00 UTC firing. Re-schedule happens at the end of PR-5
+  via re-running `cron.schedule(...)` from PR #51's setup script with
+  the same daily 06:00 UTC timing.
+- `CRON_SECRET` rotated and synchronized between vault
+  (`pattern_detection_cron_secret`) and the function env var
+- Manual trigger returns 200 with `users_processed: 1`,
+  `patterns_detected: 0` (function works; LLM detection on real data
+  returns empty array — separate Stage 2B investigation)
 
-- `cron-pattern-detection` Edge Function has column-drift bugs
-  (`decisions.title`, `outcomes.reflection` — neither column exists).
-- The function isn't scheduled in pg_cron (only `reminders-fire-every-
-  minute` is currently scheduled).
+**2A in flight:**
 
-Without seeded patterns, Stage 2A's gates would gate emptiness — a
-§1.5 Substrate Visibility violation. Hence the prereq.
-
-### 2A-prereq PRs (in flight)
-
-- **PR-prereq-1** — `fix/cron-pattern-detection-column-drift` —
-  4-line code fix correcting `decisions.title` → `text_snapshot` and
-  `outcomes.reflection` → `text_snapshot`. Awaiting founder approval
-  for `deploy_edge_function` to production (per CLAUDE.md §8).
-- **PR-prereq-2** — `chore/schedule-pattern-detection-cron` —
-  setup script `supabase/migrations/setup_pattern_detection_cron.sql`
-  documenting vault seeding + scheduling (manual, founder-run, follows
-  the `setup_reminders_fire_cron.sql` convention).
-- **PR-prereq-3** — `chore/2a-prereq-docs` (this PR) — PHASE_BOARD.md
-  + SESSION_LOG.md.
-
-Architecture cross-reference rot at line 1567 (mislabels §10.7.A vs
-§10.7.B): flagged to founder. Founder edits the .docx in Word
-directly per their explicit out (.docx repacking is risky for a
-one-phrase change).
-
-### 2A-prereq smoke gate (must pass before Stage 2A starts)
-
-- [ ] PR-prereq-1 merged to develop
-- [ ] cron-pattern-detection deployed (Supabase MCP `deploy_edge_function`)
-- [ ] PR-prereq-2 merged to develop
-- [ ] Vault entries `pattern_detection_url` + `pattern_detection_cron_secret`
-      seeded
-- [ ] Setup script run manually (or via `execute_sql` MCP) by the
-      founder; cron job appears in `cron.job`
-- [ ] Manual curl trigger writes ≥1 row to `behaviour_patterns` for an
-      active user
-- [ ] PR-prereq-3 merged to develop
-
-## Stage 2A scope (after prereq smoke gate passes)
-
-5 sub-PRs per the 2A review packet (2026-05-09):
-
-- PR-1: Schema migration — `identity_profiles.proactive_surfacing_enabled`
+- **PR-A** — Stage 2A schema migration: `identity_profiles.proactive_surfacing_enabled`
   + `behaviour_patterns.{last_surfaced_at, surfacing_count, dismissed_at,
-  dismissed_reason}` + index
+  dismissed_reason}` + supporting index. **Open, awaiting guard review.**
+- Synthetic patterns seeded for the founder account (2 rows, scan_id =
+  `synthetic_2A_smoke_test`, `trigger_conditions._synthetic = true`).
+  Cleanup: DELETE after Stage 2A verification passes.
+
+## Stage 2A scope (5 sub-PRs per the 2026-05-09 review packet)
+
+- **PR-1: Schema migration** — IN FLIGHT (PR-A above)
 - PR-2: Chat function gate refinements (confidence ≥ 0.65, hybrid LLM
   relevance scoring, 7-day cooldown, daily cap of 3, per-turn cap of 1,
   fail-closed on relevance LLM failure)
@@ -83,10 +65,36 @@ one-phrase change).
   relevant")
 - PR-4: `dismiss_pattern` RPC + frontend hook (data layer; UI consumed
   in 2C)
-- PR-5: Smoke fixture for verification
+- **PR-5: Smoke fixture for verification + cron `_synthetic`-aware patch
+  + cron re-schedule** (scope expanded by guard 2026-05-09):
+  1. Smoke fixture: synthetic seed lifecycle (create → verify gates pass
+     → cleanup). Partially satisfied by the production seeds already in
+     place (cleanup query is the new piece).
+  2. `cron-pattern-detection/index.ts` patch: filter out rows where
+     `trigger_conditions->>'_synthetic' = 'true'` from BOTH the upsert
+     collision lookup (`~line 211`) AND the stale-retire query
+     (`~line 254`). Two added `.is(...)` filters in the function source.
+     Deploy via `mcp__supabase__deploy_edge_function`.
+  3. Test that demonstrates: with the patch live, a scheduled cron
+     triggered against a user that has BOTH a real cron-produced pattern
+     AND a `_synthetic=true` seeded pattern leaves the synthetic row
+     untouched (`is_active=true`, `scan_id` and `trigger_conditions`
+     unchanged) while the real pattern follows the normal lifecycle.
+  4. Cron re-schedule SQL (final step): re-run the `cron.schedule(...)`
+     block from PR #51's setup script, daily 06:00 UTC. Run via
+     `execute_sql` after the patch ships and the test passes.
+  5. Synthetic cleanup: `DELETE FROM behaviour_patterns WHERE scan_id =
+     'synthetic_2A_smoke_test' AND trigger_conditions @>
+     '{"_synthetic":true}'::jsonb;` Idempotent; runs once at the end of
+     2A verification.
 
 ## Deferred to Stage 2B
 
+- **Investigate why cron-pattern-detection's GPT-4o returned 0 patterns
+  on real data.** Could be prompt tuning, pattern_type allowlist
+  breadth, or genuine data heterogeneity (founder has 11 decisions,
+  the other test account has 33). Decision driven by Stage 2A
+  surfacing rates after wiring gates against real-shaped data.
 - Per-session surfacing cap
 - `pattern_embedding vector(3072)` column for embedding cache
 - Threshold tuning with real data (relevance floor, daily cap, embedding
@@ -111,6 +119,23 @@ that requires explicit founder + guard review.
 
 ---
 
+## Deferred deliberate cutovers
+
+These are bundles intentionally held off `main` until they have a
+deliberate production deploy moment:
+
+- **Cron infrastructure → main:** PRs #49 (lessons C70/C71), #50 (cron
+  column-drift fix), #51 (pg_cron setup script), #52 (PHASE_BOARD/
+  SESSION_LOG bootstrap), #53 (lesson C72), plus C73 + this PHASE_BOARD
+  update + Stage 2A PR-1 once it lands. As of 2026-05-09 develop is 10
+  commits ahead of main, status `diverged`. The cutover happens after
+  Stage 2A produces a stable surfacing baseline AND the C72-class audit
+  passes for cron-pattern-detection on real data. Verification before
+  cutover: re-run the manual cron trigger, confirm function still
+  returns 200, confirm `behaviour_patterns` writes succeed.
+
+---
+
 ## Parallel track — Phase 1 Security Audit
 
 Per `SECURITY_AUDIT_PLAN.md`, security runs in parallel with feature
@@ -120,7 +145,7 @@ work. New code must pass the §10 security checklist as it ships.
 |---|---|
 | 1A — Supabase advisor sweep | not started |
 | 1B — RLS audit (every table) | partial — confirmed RLS-enabled state of touched tables in Memory Surface + 2A-prereq recon; full sweep pending |
-| 1C — Edge Function review | partial — cron-pattern-detection bug surfaced in 2A-prereq recon (independent of audit) |
+| 1C — Edge Function review | partial — cron-pattern-detection column-drift surfaced + fixed in 2A-prereq (lesson C72); other functions not audited |
 | 1D — Frontend security review | not started |
 | 1E — Dependency vulnerability scan | not started |
 | 1F — Auth + session review | not started |
@@ -133,35 +158,61 @@ running a fresh advisor scan is autonomous per CLAUDE.md §8.
 
 ## Recently shipped (last 7 days)
 
-- 2026-05-08 — Memory Surface §10.13.1 (Identity Card) feedback
-  unblocker:
-  - PR #47: `feedback_signals_surface_check` migration (extend allowlist
-    to admit `'memory'`)
-  - PR #48: hook fix (`use-identity-card-data.ts` writes
-    `surface: "memory"`)
-  - PR #49: lessons C70 + C71 (LESSONS.md created, awaiting merge)
-  - PR #46: Memory Surface (develop → main) — **awaiting founder cutover**
+- 2026-05-09 — Stage 2A-prereq closed:
+  - PR #50: cron-pattern-detection column-drift fix (`text_snapshot`)
+  - PR #51: `pg_cron` setup script for `cron-pattern-detection`
+  - PR #52: PHASE_BOARD.md + SESSION_LOG.md bootstrap
+  - PR #53: lesson C72 (schema-leads-query extends to scheduled jobs)
+  - Function deployed (v19), pg_cron scheduled, manual trigger returns
+    200, function logic verified end-to-end
+  - Synthetic patterns seeded for Stage 2A verification
+- 2026-05-09 — PR #46 (Memory Surface §10.13.1) merged to **main**.
+  Live on sevenmynd.com.
+- 2026-05-08 — Memory Surface §10.13.1 feedback unblocker:
+  - PR #47: `feedback_signals_surface_check` migration (admit `'memory'`)
+  - PR #48: hook fix (`use-identity-card-data.ts` writes `surface: "memory"`)
+  - PR #49: lessons C70 + C71 (LESSONS.md created)
 - 2026-05-05 — Phase 0.C Stage 1 closed (PR #41 — document staging UX
   rebuild). RDD H1-H6 metrics computable.
 
 ## Lessons captured this cycle
 
-- C70 — CHECK constraint allowlists invisible via `information_schema.columns`;
-  query `pg_constraint` (LESSONS.md, awaiting PR #49 merge)
-- C71 — Postgres data-modifying CTEs cannot see each other's effects on
-  the same target table (LESSONS.md, awaiting PR #49 merge)
-- C72 — *(pending)* Schema-leads-query (C29/C63) extends to scheduled
-  jobs. Column drift in unrun crons is invisible until first scheduled
-  run. Will land at session end alongside the 2A-prereq close.
+- **C70** — CHECK constraint allowlists invisible via `information_schema.columns`;
+  query `pg_constraint` (LESSONS.md, merged via PR #49)
+- **C71** — Postgres data-modifying CTEs cannot see each other's effects on
+  the same target table due to MVCC snapshot isolation (LESSONS.md, merged via PR #49)
+- **C72** — Schema-leads-query (C29/C63) extends to scheduled jobs and
+  Edge Functions; column drift in unrun code is invisible until first
+  execution (LESSONS.md, merged via PR #53)
+- **C73** — `vault.update_secret()` inside an unreferenced CTE silently
+  no-ops because PostgreSQL eliminates unreferenced CTEs. Vault
+  mutations must be standalone statements. (LESSONS.md, in this PR)
+- **C74 (candidate, formalize when PR-5 lands and verifies):** when
+  seeding test data into a production table that has a cron consumer,
+  the cron MUST be aware of test-data markers. Otherwise the cron's
+  data-lifecycle logic (upsert, retire, archive, ALL `.neq/.lt/.gt`
+  filters) silently corrupts the test data on its next scheduled run.
+  Discovered 2026-05-09 when the synthetic Stage 2A seeds would have
+  been retired by `cron-pattern-detection` stale-retire query on the
+  06:00 UTC firing. Engineering rule:
+  1. Read the cron's full data-modification path (upsert + retire/
+     archive + ALL `.neq/.lt/.gt` filters) before seeding.
+  2. Confirm the test marker excludes test rows from EVERY modification
+     path the cron exercises.
+  3. If exclusion isn't possible, pause the cron during the test window
+     and re-schedule after cleanup.
+  4. Document the test/cron interaction in PHASE_BOARD or runbook so
+     future operators understand why the cron is paused.
 
 ## Open blockers
 
-- `cron-pattern-detection` not producing data — being addressed by the
-  three 2A-prereq PRs.
 - Architecture .docx cross-reference rot at line 1567 — flagged to
-  founder for Word edit.
+  founder for Word edit. Independent of any active PR.
+- *(2B parallel sub-task, not blocking 2A)* GPT-4o returns 0 patterns
+  on real data via cron-pattern-detection. Tracked under "Deferred to
+  Stage 2B" above.
 
 ---
 
-*Updated: 2026-05-09. Update this file at session end with current
-phase, sub-stage progress, and any blocker shifts.*
+*Updated: 2026-05-09 mid-session. Next session entry update at the next
+session-end SESSION_LOG handoff.*
