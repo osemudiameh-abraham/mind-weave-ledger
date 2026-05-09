@@ -143,7 +143,7 @@ work. New code must pass the §10 security checklist as it ships.
 
 | Sub-phase | Status |
 |---|---|
-| 1A — Supabase advisor sweep | not started |
+| **1A — Supabase advisor sweep** | **ELEVATED PRIORITY (3 ERROR-level RLS findings discovered during Stage 2A PR-1 smoke check 2026-05-09)** |
 | 1B — RLS audit (every table) | partial — confirmed RLS-enabled state of touched tables in Memory Surface + 2A-prereq recon; full sweep pending |
 | 1C — Edge Function review | partial — cron-pattern-detection column-drift surfaced + fixed in 2A-prereq (lesson C72); other functions not audited |
 | 1D — Frontend security review | not started |
@@ -151,8 +151,47 @@ work. New code must pass the §10 security checklist as it ships.
 | 1F — Auth + session review | not started |
 | 1G — Pen test prep | not started (pre-launch only) |
 
-Recommend a 1A advisor sweep next session — fast, finds real issues, and
-running a fresh advisor scan is autonomous per CLAUDE.md §8.
+### Phase 1A — critical findings to investigate FIRST (per guard 2026-05-09)
+
+The `get_advisors` security scan run during Stage 2A PR-1 surfaced
+**3 ERROR-level RLS findings + 23 WARN-level findings** (24 advisories
+total — `function_search_path_mutable` ×10, `anon_security_definer_function_executable` ×6,
+`authenticated_security_definer_function_executable` ×6, `auth_leaked_password_protection` ×1,
+plus the 3 ERRORs below). All are pre-existing (not introduced by the
+2A-PR-1 migration), but the ERROR-level RLS findings are public-launch
+blockers and the `public.users` finding may be data-exposure-now-active
+depending on table contents.
+
+**Critical findings to investigate FIRST in 1A:**
+
+1. **`public.users` — RLS disabled.** Highest urgency. Verify:
+   - Is this a Supabase-auto-created mirror table, OR a custom user
+     table? The latter is much more concerning.
+   - What columns/data are actually in it? (`SELECT column_name FROM
+     information_schema.columns WHERE table_schema='public' AND
+     table_name='users'`).
+   - If it contains user PII (email, full name, phone, etc.) and RLS
+     is off, every authenticated user with API access can read every
+     other user's row right now. ERROR-critical.
+   - If it's auto-created and only contains opaque IDs, lower urgency
+     — but still needs RLS for defense-in-depth.
+
+2. **`public.memory_fact_evidence` — RLS disabled** on user-scoped
+   evidence rows. Cross-user leakage risk: every authenticated user
+   could query any other user's memory evidence today. Immediate
+   public-launch blocker.
+
+3. **`public.memories_raw` — RLS disabled** on user-scoped memory data.
+   Same cross-user leakage risk. The most personal data surface in
+   Seven Mynd. Immediate public-launch blocker.
+
+**Schedule:** Phase 1A session within 48 hours of Stage 2A PR-2 ship.
+Until 1A is sub-phase-clean, no marketing push, no broader user
+onboarding. Existing 3 active users + founder account is the bound.
+
+Other Phase 1A WARN-level items (search_path, SECURITY DEFINER,
+leaked-password protection) can be triaged in the same session but
+are second-priority to the 3 ERROR-level RLS findings.
 
 ---
 
