@@ -128,6 +128,63 @@ not a bug, just a subtle interaction with same-table modifying CTEs.
 
 ---
 
+## C72 — Schema-leads-query (C29/C63) extends to scheduled jobs and Edge Functions; column drift in unrun code is invisible until first execution
+
+**Date:** 2026-05-09
+**Surface:** `cron-pattern-detection` Edge Function vs `decisions` / `outcomes` schema.
+**Context:** Stage 2A-prereq for Proactive Surfacing (§10.7.A) — discovered that `behaviour_patterns` has 0 rows because the cron-pattern-detection function never produced any.
+
+The function selected `decisions.title` and `outcomes.reflection` — neither
+column exists. Real columns are `decisions.text_snapshot` and
+`outcomes.text_snapshot`. The function was deployed (visible in
+`supabase/functions/`) but **never scheduled in `pg_cron`** — only
+`reminders-fire` was. The column-drift bugs sat invisible for months:
+deployment passed, git history clean, code review didn't catch it because
+nobody ran the function against real data.
+
+**Why it was easy to miss:** lessons C29 and C63 say to verify columns
+exist before extending a `.select()`. That discipline applies to
+hand-written queries you can see executing. It does *not* automatically
+extend to:
+
+- **Scheduled jobs** that haven't fired yet (cron schedule was missing entirely)
+- **Edge Functions** that exist in source but aren't being invoked
+- **Migration files** in `supabase/migrations/` that aren't applied yet
+- **Code paths** behind feature flags that are off
+
+The schema-vs-code gap is invisible without execution. The first
+scheduled run is the first time Postgres ever sees the query — and the
+first time the column-drift error surfaces.
+
+**The discipline (extends C29/C63):** when fixing or auditing a function
+that touches the database, audit pairs of things together:
+
+1. **Cron schedule check:** `SELECT * FROM cron.job WHERE active = true;`
+2. **Function source review:** every `.from(...)` and `.select(...)` call.
+3. **Schema diff:** for every table referenced, query
+   `information_schema.columns` and compare against the `.select()` list.
+4. **Function side-effects:** the function should produce observable rows
+   within one trigger; absence of rows after a 200 response means
+   `try/catch` is silently swallowing an error.
+
+**Engineering rule for new scheduled functions:**
+
+1. Schedule the cron AND trigger once manually before relying on the
+   schedule. The first run reveals errors the second run can't.
+2. Read the response status code AND the destination table state.
+   200 alone is not enough — `try/catch` patterns return ok even when
+   the function silently fails. (See chat/index.ts:1318 `[RESEARCH]
+   Failed to persist research memory` — same anti-pattern.)
+3. Pull `[FUNCTION_NAME]` log lines via `get_logs` to confirm no
+   `[ERROR]` lines fired during the trigger.
+
+**Cross-reference:** C29, C63 (column verification before `.select()`).
+Architecture Part XV.7 (audit pattern). Discovered while diagnosing
+why `behaviour_patterns` was empty after the §10.7.A proactive
+surfacing prereqs landed.
+
+---
+
 <!--
 When adding a new lesson:
 
