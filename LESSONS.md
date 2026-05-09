@@ -185,6 +185,78 @@ surfacing prereqs landed.
 
 ---
 
+## C73 — `vault.update_secret()` (and any side-effecting function call) inside an unreferenced CTE silently no-ops
+
+**Date:** 2026-05-09
+**Surface:** Stage 2A-prereq coordinated rotation of `pattern_detection_cron_secret`.
+**Context:** I tried to rotate the vault secret AND surface the new value to the founder in one statement. Wrote a CTE chain like:
+
+```sql
+WITH new_value AS (SELECT encode(gen_random_bytes(32), 'hex') AS v),
+     updated AS (
+       SELECT vault.update_secret(
+         (SELECT id FROM vault.secrets WHERE name = 'pattern_detection_cron_secret'),
+         (SELECT v FROM new_value), 'pattern_detection_cron_secret', '...'
+       ) AS r
+     )
+SELECT (SELECT v FROM new_value) AS new_cron_secret;  -- references new_value but NOT updated
+```
+
+The main `SELECT` referenced `new_value` to display the new secret to
+the founder. It did **not** reference `updated`. PostgreSQL eliminated
+the unreferenced CTE; `vault.update_secret(...)` never executed. The
+vault entry stayed at the previous value. The founder pasted the
+displayed-but-unstored value into the function env var. The trigger
+401'd because vault and env diverged.
+
+**Why it was easy to miss:** the CTE was right there in the SQL. The
+result of the main SELECT (the new secret value) looked correct. There's
+no error, no warning, no log line — just a silent skip. The first
+diagnostic ("did vault update?") was empirical:
+
+```sql
+SELECT length(decrypted_secret), LEFT(decrypted_secret, 8)
+FROM vault.decrypted_secrets WHERE name = 'pattern_detection_cron_secret';
+-- length=44, first8='p0xE/ZOy' (the OLD base64 value, not the hex value displayed)
+```
+
+**Same root cause family as C71** but a different symptom. C71: the CTE
+runs but its mutations are invisible to other CTEs in the same statement
+due to snapshot isolation. C73: the CTE doesn't run at all because the
+PostgreSQL planner eliminates unreferenced CTEs. Both gotchas are about
+CTE semantics; both bite when you assume "the CTE definitely ran because
+it's there."
+
+PostgreSQL documents this behaviour in §7.8.2 — modifying CTEs are
+guaranteed to execute exactly once **when the CTE is referenced in the
+main query**. An unreferenced WITH clause may be optimised away.
+
+**The discipline:** vault mutations (`vault.create_secret`,
+`vault.update_secret`, `vault.delete_secret`) and any function call with
+a side effect that the main query doesn't consume must be **standalone
+statements**, not CTE-embedded. Use one of:
+
+```sql
+-- (a) standalone
+SELECT vault.update_secret(...);
+-- then the next statement reads the result
+
+-- (b) reference the CTE in the main query
+WITH updated AS (SELECT vault.update_secret(...) AS r)
+SELECT r FROM updated;
+```
+
+**Verification rule:** after any vault mutation, ALWAYS query
+`vault.decrypted_secrets` (or appropriate post-state) to confirm the
+mutation took effect. Do not trust the SQL ran just because no error
+was thrown — for a CTE-embedded mutation that PostgreSQL optimised away,
+there IS no error, and there are no side effects either.
+
+**Cross-reference:** C71 (data-modifying CTE snapshot isolation).
+PostgreSQL §7.8.2 (modifying CTEs).
+
+---
+
 <!--
 When adding a new lesson:
 
