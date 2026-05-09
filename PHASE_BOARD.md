@@ -31,7 +31,15 @@ prototype.**
 2A-prereq closed 2026-05-09. Cron infrastructure is now functional:
 - `cron-pattern-detection` redeployed (v19, ACTIVE) with the column-drift
   fix (`decisions.text_snapshot`, `outcomes.text_snapshot`)
-- `pg_cron` job `cron-pattern-detection-daily-0600-utc` scheduled
+- `pg_cron` job `cron-pattern-detection-daily-0600-utc` was scheduled,
+  then **PAUSED 2026-05-09 03:14 UTC** via `cron.unschedule(...)`
+  pending Stage 2A PR-5 (cron `_synthetic`-aware filter — see expanded
+  PR-5 scope below). Pause prevents the stale-retire query
+  (`is_active=true AND scan_id != current_run_scan_id → set
+  is_active=false`) from corrupting the synthetic Stage 2A seeds on
+  its next 06:00 UTC firing. Re-schedule happens at the end of PR-5
+  via re-running `cron.schedule(...)` from PR #51's setup script with
+  the same daily 06:00 UTC timing.
 - `CRON_SECRET` rotated and synchronized between vault
   (`pattern_detection_cron_secret`) and the function env var
 - Manual trigger returns 200 with `users_processed: 1`,
@@ -57,8 +65,28 @@ prototype.**
   relevant")
 - PR-4: `dismiss_pattern` RPC + frontend hook (data layer; UI consumed
   in 2C)
-- PR-5: Smoke fixture for verification — partially satisfied by the
-  synthetic seed already on production
+- **PR-5: Smoke fixture for verification + cron `_synthetic`-aware patch
+  + cron re-schedule** (scope expanded by guard 2026-05-09):
+  1. Smoke fixture: synthetic seed lifecycle (create → verify gates pass
+     → cleanup). Partially satisfied by the production seeds already in
+     place (cleanup query is the new piece).
+  2. `cron-pattern-detection/index.ts` patch: filter out rows where
+     `trigger_conditions->>'_synthetic' = 'true'` from BOTH the upsert
+     collision lookup (`~line 211`) AND the stale-retire query
+     (`~line 254`). Two added `.is(...)` filters in the function source.
+     Deploy via `mcp__supabase__deploy_edge_function`.
+  3. Test that demonstrates: with the patch live, a scheduled cron
+     triggered against a user that has BOTH a real cron-produced pattern
+     AND a `_synthetic=true` seeded pattern leaves the synthetic row
+     untouched (`is_active=true`, `scan_id` and `trigger_conditions`
+     unchanged) while the real pattern follows the normal lifecycle.
+  4. Cron re-schedule SQL (final step): re-run the `cron.schedule(...)`
+     block from PR #51's setup script, daily 06:00 UTC. Run via
+     `execute_sql` after the patch ships and the test passes.
+  5. Synthetic cleanup: `DELETE FROM behaviour_patterns WHERE scan_id =
+     'synthetic_2A_smoke_test' AND trigger_conditions @>
+     '{"_synthetic":true}'::jsonb;` Idempotent; runs once at the end of
+     2A verification.
 
 ## Deferred to Stage 2B
 
@@ -159,6 +187,22 @@ running a fresh advisor scan is autonomous per CLAUDE.md §8.
 - **C73** — `vault.update_secret()` inside an unreferenced CTE silently
   no-ops because PostgreSQL eliminates unreferenced CTEs. Vault
   mutations must be standalone statements. (LESSONS.md, in this PR)
+- **C74 (candidate, formalize when PR-5 lands and verifies):** when
+  seeding test data into a production table that has a cron consumer,
+  the cron MUST be aware of test-data markers. Otherwise the cron's
+  data-lifecycle logic (upsert, retire, archive, ALL `.neq/.lt/.gt`
+  filters) silently corrupts the test data on its next scheduled run.
+  Discovered 2026-05-09 when the synthetic Stage 2A seeds would have
+  been retired by `cron-pattern-detection` stale-retire query on the
+  06:00 UTC firing. Engineering rule:
+  1. Read the cron's full data-modification path (upsert + retire/
+     archive + ALL `.neq/.lt/.gt` filters) before seeding.
+  2. Confirm the test marker excludes test rows from EVERY modification
+     path the cron exercises.
+  3. If exclusion isn't possible, pause the cron during the test window
+     and re-schedule after cleanup.
+  4. Document the test/cron interaction in PHASE_BOARD or runbook so
+     future operators understand why the cron is paused.
 
 ## Open blockers
 
