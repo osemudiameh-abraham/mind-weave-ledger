@@ -1054,6 +1054,122 @@ async function embed(text: string, apiKey: string): Promise<number[] | null> {
   }
 }
 
+// ─── Cosine similarity for embedding-based pre-filter (Stage 2A PR-2) ───
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, na = 0, nb = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return na === 0 || nb === 0 ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+// ─── §10.7.A Proactive Surfacing relevance scoring (Stage 2A PR-2) ───
+// Hybrid: embedding pre-filter (cheap, ~80ms p50) → gpt-4o-mini relevance
+// LLM call on the top-3 candidates (precise, ~120ms p50, ~280ms p95).
+// Returns scores sorted desc by score. Fails closed: any error path
+// returns [] which short-circuits surfacing in the caller.
+async function scorePatternRelevance(params: {
+  message: string;
+  recentMessages: { role: string; content: string }[];
+  candidates: Array<{ id: string; description: string }>;
+  queryEmbedding: number[] | null;
+  openaiKey: string;
+}): Promise<Array<{ id: string; score: number }>> {
+  const { message, recentMessages, candidates, queryEmbedding, openaiKey } = params;
+
+  if (!queryEmbedding || candidates.length === 0) return [];
+
+  // Step 1: embedding pre-filter. Embed each candidate description in
+  // parallel; cosine similarity vs queryEmbedding; keep top-3 with
+  // sim ≥ 0.4 (wide pre-filter; LLM does precision per guard Q1).
+  const embedded = await Promise.all(
+    candidates.slice(0, 10).map(async (c) => {
+      const emb = await embed(c.description, openaiKey);
+      if (!emb) return null;
+      return { id: c.id, description: c.description, similarity: cosineSimilarity(queryEmbedding, emb) };
+    }),
+  );
+  const preFiltered = embedded
+    .filter((c): c is NonNullable<typeof c> => c !== null && c.similarity >= 0.4)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, 3);
+
+  if (preFiltered.length === 0) return [];
+
+  // Step 2: gpt-4o-mini relevance scoring. One batched call for top-3.
+  // max_tokens=100 (~3 entries × ~15 tokens each + JSON wrapper, ~40%
+  // headroom). response_format=json_object pre-empts parse-error paths.
+  const recentContext = recentMessages
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+  const candidateBlock = preFiltered
+    .map((c, i) => `${i + 1}. id="${c.id}" description="${c.description}"`)
+    .join("\n");
+
+  const systemPrompt = `You evaluate behavioural patterns for relevance to a user's current message. For each candidate pattern, score 0.0-1.0 how directly the pattern applies to what the user just said. 1.0 = directly relevant; 0.7+ = clearly relevant; 0.4-0.7 = tangentially relevant; below 0.4 = not relevant. Return ONLY {"scores":[{"id":"<uuid>","score":<number>}, ...]}. No prose, no reasoning, no markdown.`;
+  const userPrompt = `User just said: "${message}"\n\nRecent conversation:\n${recentContext || "(no prior context)"}\n\nCandidate patterns (already pre-filtered for embedding similarity to current message):\n${candidateBlock}\n\nScore each pattern's direct relevance to what the user just said.`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0,
+        max_tokens: 100,
+        response_format: { type: "json_object" },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      console.error(`[PATTERN_RELEVANCE] OpenAI ${res.status} — fail closed`);
+      return [];
+    }
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || "{}";
+    const cleaned = raw.replace(/```json\n?|```/g, "").trim();
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      console.error(`[PATTERN_RELEVANCE] JSON parse failed — fail closed`);
+      return [];
+    }
+
+    const arr: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : (parsed as { scores?: unknown[] }).scores ?? [];
+
+    return arr
+      .map((x): { id: string; score: number } | null => {
+        if (typeof x !== "object" || x === null) return null;
+        const xx = x as Record<string, unknown>;
+        if (typeof xx.id !== "string" || typeof xx.score !== "number") return null;
+        return { id: xx.id, score: Math.max(0, Math.min(1, xx.score)) };
+      })
+      .filter((x): x is { id: string; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score);
+  } catch (err) {
+    clearTimeout(timer);
+    console.error(`[PATTERN_RELEVANCE] exception — fail closed:`, err);
+    return [];
+  }
+}
+
 // ─── Deterministic UUID from a string. Used for idempotency_key on outcomes
 //     where the DB column type is uuid. SHA-256 → first 32 hex chars formatted
 //     as a canonical UUID v4-like string (version bits are cosmetic here —
@@ -1963,14 +2079,16 @@ serve(async (req) => {
         .limit(10),
       supabase
         .from("behaviour_patterns")
-        .select("id, pattern_type, description, evidence_count, confidence, trigger_conditions, last_seen_at, severity, recommendation")
+        .select("id, pattern_type, description, evidence_count, confidence, trigger_conditions, last_seen_at, severity, recommendation, last_surfaced_at, surfacing_count")
         .eq("user_id", user.id)
         .eq("is_active", true)
+        .gte("confidence", 0.65)
+        .is("dismissed_at", null)
         .order("confidence", { ascending: false })
         .limit(10),
       supabase
         .from("identity_profiles")
-        .select("display_name, self_role, self_company, self_city, goals, focus_areas")
+        .select("display_name, self_role, self_company, self_city, goals, focus_areas, proactive_surfacing_enabled")
         .eq("user_id", user.id)
         .maybeSingle(),
       supabase
@@ -2268,70 +2386,110 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
       systemPrompt += `\n\n## OVERDUE REVIEWS\nThese decisions are past their review date. Gently remind the user if appropriate:\n${overdueLines.join("\n")}`;
     }
 
-    // ─── Real-time pattern intervention (Architecture Section 4.9) ───
-    // Before generating a response, check active patterns for trigger matches.
-    // Matched patterns are injected as PRIORITY warnings the LLM must address.
+    // ─── §10.7.A Proactive Surfacing gates (Stage 2A PR-2) ───
+    // Replaces the prior keyword-only intervention prototype with a
+    // 5-gate chain per architecture §10.7.A:
+    //   gate 2  — confidence ≥ 0.65          (filtered at DB query above)
+    //   gate 3  — relevance_score ≥ 0.7      (hybrid embedding + LLM here)
+    //   gate 4a — proactive_surfacing_enabled toggle  (checked here)
+    //   gate 4b — dismissed_at IS NULL       (filtered at DB query above)
+    //   gate 5  — 7-day cooldown OR new evidence      (checked here)
+    // Plus per-day cap of 3 and per-turn cap of 1.
+    // Failure mode: any LLM error → no surface ("better silent than wrong"
+    // per founder brief). Decisions-due surfacing (above) is unaffected
+    // by this gate — patterns-only scope per guard direction 2026-05-09.
     const matchedPatternIds: string[] = [];
-    const messageLower = message.toLowerCase();
 
-    if (patterns.length > 0) {
-      const triggeredPatterns: typeof patterns = [];
-      const passivePatterns: typeof patterns = [];
+    // Gate 4a — toggle. Default true; if user disabled in /settings,
+    // skip the entire pattern intervention block.
+    const proactiveEnabled =
+      (identity as { proactive_surfacing_enabled?: boolean } | null)
+        ?.proactive_surfacing_enabled !== false;
 
-      for (const p of patterns) {
-        let triggered = false;
+    if (proactiveEnabled && patterns.length > 0) {
+      // Gate 5 — cooldown OR new evidence. Surface allowed if:
+      //   last_surfaced_at IS NULL (never surfaced)
+      //   OR last_surfaced_at < 7 days ago
+      //   OR last_seen_at > last_surfaced_at (new evidence since last surface).
+      const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const eligibleByCooldown = patterns.filter((p) => {
+        if (!p.last_surfaced_at) return true;
+        const lastSurfacedMs = new Date(p.last_surfaced_at).getTime();
+        if (lastSurfacedMs < sevenDaysAgoMs) return true;
+        if (p.last_seen_at && new Date(p.last_seen_at).getTime() > lastSurfacedMs) return true;
+        return false;
+      });
 
-        // Check trigger_conditions keywords against the current message
-        if (p.trigger_conditions && typeof p.trigger_conditions === "object") {
-          const conditions = p.trigger_conditions as { keywords?: string[]; intents?: string[] };
-          if (conditions.keywords && Array.isArray(conditions.keywords)) {
-            for (const keyword of conditions.keywords) {
-              if (messageLower.includes(keyword.toLowerCase())) {
-                triggered = true;
-                break;
-              }
-            }
-          }
-          if (!triggered && conditions.intents && Array.isArray(conditions.intents)) {
-            for (const intent of conditions.intents) {
-              if (messageLower.includes(intent.toLowerCase())) {
-                triggered = true;
-                break;
-              }
-            }
-          }
-        }
+      // Per-day cap: ≤ 3 surfacings per UTC day per user. Counted from
+      // the patterns array (RLS-scoped to this user via the original query,
+      // so the count is per-user and current).
+      const startOfUtcDayMs = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
+      const todaySurfacedCount = patterns.filter(
+        (p) => p.last_surfaced_at && new Date(p.last_surfaced_at).getTime() >= startOfUtcDayMs,
+      ).length;
+      const dailyCapHit = todaySurfacedCount >= 3;
 
-        // Fallback: keyword match against pattern_type and description
-        if (!triggered) {
-          const patternWords = `${p.pattern_type} ${p.description}`.toLowerCase().split(/\s+/).filter((w: string) => w.length >= 4);
-          const matchCount = patternWords.filter((w: string) => messageLower.includes(w)).length;
-          if (matchCount >= 2) {
-            triggered = true;
-          }
-        }
-
-        if (triggered) {
-          triggeredPatterns.push(p);
-          matchedPatternIds.push(p.id);
-        } else {
-          passivePatterns.push(p);
-        }
-      }
-
-      // PRIORITY pattern warnings — LLM MUST address these
-      if (triggeredPatterns.length > 0) {
-        const warningLines = triggeredPatterns.map((p) => {
-          const lastSeen = p.last_seen_at ? new Date(p.last_seen_at).toLocaleDateString() : "unknown";
-          return `⚠️ ACTIVE WARNING — [${p.pattern_type}]: ${p.description} (observed ${p.evidence_count} times, last seen: ${lastSeen}, confidence: ${Math.round(p.confidence * 100)}%)`;
+      if (eligibleByCooldown.length > 0 && !dailyCapHit) {
+        // Gate 3 — hybrid relevance scoring. Embedding pre-filter (top-3,
+        // sim ≥ 0.4) then gpt-4o-mini LLM evaluation. Per-turn cap of 1:
+        // we surface only the highest-scoring pattern that passes ≥ 0.7.
+        const recentMessages = (history || []).slice(-3).map((m) => ({
+          role: (m as { role?: string }).role ?? "user",
+          content: (m as { content?: string }).content ?? "",
+        }));
+        const scored = await scorePatternRelevance({
+          message,
+          recentMessages,
+          candidates: eligibleByCooldown.map((p) => ({ id: p.id, description: p.description })),
+          queryEmbedding,
+          openaiKey,
         });
-        systemPrompt += `\n\n## ⚠️ PATTERN WARNINGS — YOU MUST ADDRESS THESE IN YOUR RESPONSE\nThe following behaviour patterns match what the user is currently saying or doing. You MUST:\n1. Acknowledge the pattern naturally (not robotically)\n2. Reference specific evidence ("You've done this X times before")\n3. Warn them clearly but warmly — you are protective, not preachy\n4. Let them override if they choose — you warn, you don't block\n5. Wrap the pattern observation itself in a :::pattern ... ::: callout block (sec.10.10) so the user can't miss it. Keep the callout body to 1-3 sentences with the specific evidence and frequency. The rest of your response (acknowledgement, advice, follow-through) stays as plain prose around the callout.\n${warningLines.join("\n")}`;
-        console.log(`[PATTERN_INTERVENTION] ${triggeredPatterns.length} pattern(s) triggered for user ${user.id.slice(0, 8)}: ${triggeredPatterns.map((p) => p.pattern_type).join(", ")}`);
+
+        const topMatch = scored.find((s) => s.score >= 0.7);
+        const surfaced = topMatch ? eligibleByCooldown.find((q) => q.id === topMatch.id) : undefined;
+
+        if (surfaced && topMatch) {
+          const lastSeenLabel = surfaced.last_seen_at
+            ? new Date(surfaced.last_seen_at).toLocaleDateString()
+            : "unknown";
+          const warningLine = `⚠️ ACTIVE WARNING — [${surfaced.pattern_type}]: ${surfaced.description} (observed ${surfaced.evidence_count} times, last seen: ${lastSeenLabel}, confidence: ${Math.round(surfaced.confidence * 100)}%, relevance: ${Math.round(topMatch.score * 100)}%)`;
+
+          systemPrompt += `\n\n## ⚠️ PATTERN WARNING — YOU MUST ADDRESS THIS IN YOUR RESPONSE\nThe following behaviour pattern matches what the user is currently saying or doing. You MUST:\n1. Acknowledge the pattern naturally (not robotically)\n2. Reference specific evidence ("You've done this X times before")\n3. Warn them clearly but warmly — you are protective, not preachy\n4. Let them override if they choose — you warn, you don't block\n5. Wrap the pattern observation itself in a :::pattern ... ::: callout block (sec.10.10) so the user can't miss it. Keep the callout body to 1-3 sentences with the specific evidence and frequency. The rest of your response (acknowledgement, advice, follow-through) stays as plain prose around the callout.\n${warningLine}`;
+
+          matchedPatternIds.push(surfaced.id);
+          console.log(
+            `[PATTERN_INTERVENTION] surfaced pattern=${surfaced.id.slice(0, 8)} type=${surfaced.pattern_type} score=${topMatch.score.toFixed(2)} for user ${user.id.slice(0, 8)}`,
+          );
+
+          // Atomic UPDATE behaviour_patterns + INSERT audit_log via the
+          // record_pattern_surfacing RPC (Stage 2A PR-2a migration). The
+          // user-JWT-bearing supabase client satisfies the RPC's
+          // auth.uid() ownership check. Fail-open per packet §4: if the
+          // RPC errors, log and continue — the surface already rendered,
+          // the audit/cooldown lags. Standalone statement (C73 discipline).
+          const { error: rpcErr } = await supabase.rpc("record_pattern_surfacing", {
+            p_pattern_id: surfaced.id,
+            p_relevance_score: topMatch.score,
+            p_pattern_type: surfaced.pattern_type,
+          });
+          if (rpcErr) {
+            console.error(
+              `[PATTERN_INTERVENTION] record_pattern_surfacing failed pattern=${surfaced.id.slice(0, 8)}: ${rpcErr.message}`,
+            );
+          }
+        }
+        // else: no pattern scored ≥ 0.7 → silent (fail closed)
       }
 
-      // Passive pattern listing (non-triggered patterns, for general awareness)
+      // Passive listing — eligible patterns we didn't surface this turn.
+      // Provides general LLM awareness without forcing surfacing. Excludes
+      // the one we just surfaced (if any) to avoid duplicate mention.
+      const surfacedId = matchedPatternIds[0];
+      const passivePatterns = eligibleByCooldown.filter((p) => p.id !== surfacedId);
       if (passivePatterns.length > 0) {
-        const patternLines = passivePatterns.map((p) => `- [${p.pattern_type}] ${p.description} (seen ${p.evidence_count} times)`);
+        const patternLines = passivePatterns.map(
+          (p) => `- [${p.pattern_type}] ${p.description} (seen ${p.evidence_count} times)`,
+        );
         systemPrompt += `\n\n## BEHAVIOUR PATTERNS YOU'VE DETECTED\nMention these if relevant, but they are not triggered by the current message:\n${patternLines.join("\n")}`;
       }
     }
