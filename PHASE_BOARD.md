@@ -176,6 +176,63 @@ Stage 2A PR-2b is verified when:
    **out of scope** for Stage 2A PR-2b verification — that's the
    §10.7.A vs §2.1 boundary question for v5.8.
 
+### C78 (candidate) — testing in production contaminates the substrate
+
+**Discovered:** 2026-05-11, during Stage 2A PR-2b iteration 2 testing.
+
+**Finding:** Behavioral intelligence systems testing in production
+contaminates the substrate's understanding of the user. Across three
+Phase A retest turns (05:36, 21:16, 22:02, 23:59 UTC), the founder
+sent variants of "I'm thinking of pulling an all-nighter to finish
+this project tonight." Each turn was persisted to `messages` with no
+distinguishing marker. The substrate now treats those test inputs as
+**real stated intentions**: Seven's most recent response opened with
+"You've decided to pull an all-nighter tonight, as you've mentioned a
+few times today" — pure memory-retrieval content, treating synthetic
+test phrasings as genuine user data.
+
+Every additional test turn deepens the contamination:
+- `messages.metadata` doesn't mark test-mode origin
+- Semantic memory retrieval surfaces test phrasings as "relevant past context"
+- Pattern detection (when running) would include test inputs in 90-day windows
+- `identity_model` updates (when running) would weight test inputs as real signal
+- `cron-identity-model.communication_style` would learn from test interactions
+
+**Resolution path:** a `test mode` flag at the chat function level —
+passed via header (`x-seven-test-mode: 1`) or query param — should mark
+generated messages with `metadata.test_mode = true` and exclude them
+from:
+- Memory retrieval (`match_memories` RPC + `recentMems` queries)
+- Pattern detection inputs (`cron-pattern-detection`'s decision/outcome/
+  memory data fetches)
+- Identity model updates (`cron-identity-model`)
+- Feedback signal aggregation (`cron-identity-model` reading
+  `feedback_signals`)
+
+Without this, founders and engineers cannot test substrate response to
+synthetic situations without polluting their own behavioral data —
+making the substrate worse than it would be if testing happened on
+isolated accounts.
+
+**Engineering implications:**
+
+1. Stage 2A test history needs a one-time cleanup (DELETE founder's
+   2026-05-10/11 test turns from `messages`) to restore a clean baseline
+   before further testing. **Awaiting explicit founder approval; not
+   executed yet.**
+2. Stage 2A's synthetic pattern seeds (in `behaviour_patterns`) have a
+   `_synthetic = true` marker via `trigger_conditions` JSONB — that's
+   the right pattern. Apply the same discipline to test messages.
+3. Long-term: test mode is an v5.8 architectural addition, not a fix
+   we can backport surgically in 2A. **Deferred to v5.8 architecture
+   review** alongside C77.
+
+**Linked C77 dependency:** C77's resolution ("flag governed vs
+ungoverned surface origin in persisted output") naturally extends to
+C78's resolution ("flag test-mode origin in persisted input"). Both
+require persistence-layer metadata that distinguishes data provenance.
+A v5.8 design session should address both together.
+
 ---
 
 ## Deferred deliberate cutovers
