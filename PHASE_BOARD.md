@@ -119,6 +119,65 @@ that requires explicit founder + guard review.
 
 ---
 
+## Open architectural questions for v5.8
+
+### C77 (candidate) — substrate-vs-memory-retrieval governance boundary
+
+**Discovered:** 2026-05-10, during Stage 2A PR-2b end-to-end testing.
+
+**Finding:** the substrate has indexed its own ungoverned output as
+memory. Pattern-aware prose generated through an ungoverned path
+(passive listing, chat function v73) was persisted in the `messages`
+table and is now being retrieved by semantic memory on subsequent turns
+as "relevant past context." The substrate effectively remembers what
+to say about a topic without going through pattern governance.
+
+This is **not a code bug.** It's a category confusion between two
+distinct surfaces:
+
+- **§2.1 Total Recall (memory retrieval)** — supposed to surface prior
+  context, ungoverned by design.
+- **§10.7.A Proactive Surfacing (pattern gates)** — governed surface
+  with audit/cooldown/dismiss/count.
+
+When the §10.7.A path produces output that gets persisted, that output
+becomes §2.1 fodder on future turns. **Governance erodes over time as
+ungoverned outputs accumulate in message history.**
+
+**Engineering implications:**
+
+1. Stage 2A PR-2b's verification criteria (callout marker + `surfacing_count`
+   + `audit_log`) test the §10.7.A path in isolation. They cannot
+   distinguish "§10.7.A working correctly with empty substrate" from
+   "§10.7.A working correctly but §2.1 producing parallel content."
+2. Cleaning up memory history is a one-time fix that doesn't address
+   the architectural question.
+3. **Long-term:** assistant response persistence should distinguish
+   substrate-derived content from gate-derived content. Pattern callouts
+   (governed) should be persisted with metadata flagging their origin;
+   pattern-aware prose from any path should NOT be indexed as
+   patternable memory.
+
+**Resolution path:** assistant response persistence should flag whether
+output came from a governed surface so memory retrieval can decide
+whether to suppress, flag, or surface neutrally. **Deferred to v5.8
+architecture review as a design session — not a Stage 2A fix.**
+
+**Revised Stage 2A PR-2b acceptance criteria** (per this finding,
+guard direction 2026-05-10):
+
+Stage 2A PR-2b is verified when:
+1. The gate chain fires correctly when conditions are met (the
+   `:::pattern :::` callout IS rendered, RPC IS called, audit row IS
+   written, `surfacing_count` IS incremented).
+2. The gate chain does NOT fire when conditions are not met (no callout
+   when toggle off, cooldown active, dismissed, etc.).
+3. The presence of pattern-aware prose from §2.1 memory retrieval is
+   **out of scope** for Stage 2A PR-2b verification — that's the
+   §10.7.A vs §2.1 boundary question for v5.8.
+
+---
+
 ## Deferred deliberate cutovers
 
 These are bundles intentionally held off `main` until they have a
