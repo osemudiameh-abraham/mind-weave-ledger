@@ -233,6 +233,94 @@ C78's resolution ("flag test-mode origin in persisted input"). Both
 require persistence-layer metadata that distinguishes data provenance.
 A v5.8 design session should address both together.
 
+### C79 (candidate) — extraction pipeline absorbs test inputs as real identity data
+
+**Discovered:** 2026-05-11, during Stage 2A PR-2b clean-slate scoping.
+
+**Finding:** the chat function's tier-2 / tier-3 memory-extraction
+pipeline (fact extractor, memory persistence, importance scorer) does
+not distinguish hypothetical phrasings from declarative commitments.
+Within hours of starting Phase A testing today, the substrate had:
+
+- 4 polluted rows in `memories_structured` (verbatim test phrasings
+  stored as `memory_type='chat'`, `importance=5`)
+- **2 polluted facts in `memory_facts` (status='active', confidence=0.8):**
+  - `user.goal = "finish this project tonight"` (category=goals)
+  - `user.action = "pulling an all-nighter"` (category=habits)
+- 4 trace rows in `memory_traces` (access logs)
+
+The two `memory_facts` rows are the most concerning. They were
+extracted from messages like *"I'm thinking of pulling an all-nighter
+to finish this project tonight"* — a hypothetical/exploratory framing.
+The extractor treated this as a **declarative statement of habit and
+goal**, persisted as active facts with 0.8 confidence, and injected
+them into the system prompt's IDENTITY GROUNDING block on every
+subsequent chat turn (line ~2000-area in `chat/index.ts`,
+`memory_facts WHERE status='active' AND valid_until IS NULL`).
+
+So for the entire period between this morning's first test and the
+clean-slate operations: every chat turn — including unrelated ones —
+told Seven that the founder's user-level habits include "pulling an
+all-nighter" and goals include "finish this project tonight." This is
+**substrate-level identity pollution** propagating from test inputs
+in <1 turn cycle: `messages` → `memories_structured` (importance scorer)
+→ `memory_facts` (tier-2/3 extractor) → `system_prompt.IDENTITY_GROUNDING`
+on the very next turn.
+
+This compounds **C78** (test-mode flag at persistence layer) with a
+second independent concern: even when an input is real-mode, the
+fact extractor should not treat hypothetical phrasings as declarative.
+
+**v5.8 design requirements:**
+
+1. **C78 test-mode flag must propagate through the extraction pipeline.**
+   Tier-2/3 extractors (in `chat/index.ts:1460-1820` area —
+   factExtract, memExtract, decExtract, outcomeExtract, sitExtract,
+   resolveExtract paths) must check `metadata.test_mode` on the source
+   message and **skip extraction entirely** for test inputs. Without
+   this, even a perfect `messages.metadata.test_mode=true` flag at the
+   persistence layer doesn't stop the substrate from extracting test
+   inputs as facts.
+
+2. **Hypothetical-vs-declarative classification (separate quality
+   concern).** Fact extraction should distinguish:
+   - Hypothetical: *"I'm thinking of...", "Should I...", "I might...",
+     "What if I..."*
+   - Declarative: *"I plan to...", "I've decided to...", "I do this..."*
+   Only declarative phrasings should produce active facts in
+   `memory_facts`. This is independent of test mode — it's a
+   precision-of-extraction concern that affects real-mode inputs too.
+   Real users frame intentions hypothetically more often than not;
+   the current extractor over-claims.
+
+3. **Audit trail on extracted facts.** Every fact row should have a
+   `source_message_id` AND a `source_phrasing_type` (hypothetical /
+   declarative / observed-behaviour / user-stated-belief) so the
+   Memory Surface §10.13.4 can show the user what was extracted and
+   why, with the ability to dispute the extraction. The current
+   `feedback_signals` infrastructure (Stage 2A PR-1) extends naturally.
+
+**Linked C77/C78 dependency:** all three findings (C77 governed-vs-
+ungoverned surface origin, C78 test-mode flag at persistence, C79
+extraction pipeline test-mode propagation + hypothetical detection)
+share a common architectural root: the substrate's data-provenance
+metadata is too sparse. Every persisted unit (message, memory, fact,
+trace, audit row) needs richer provenance: who generated it, in what
+mode, from what source phrasing, with what governance gate. The v5.8
+design session should treat these three as one design surface.
+
+**Engineering implications for Stage 2A:**
+
+- Stage 2A PR-2b acceptance criteria unchanged — gate-chain isolation
+  test is the verification target. Clean-slate operations on 2026-05-11
+  removed today's test pollution; future tests should be one-shot to
+  minimize re-pollution while v5.8's test-mode flag is unbuilt.
+- Until v5.8 ships test-mode + extraction discipline, **engineering
+  testing of Seven Mynd's substrate must happen on a non-production
+  test account** or with one-shot tests followed by immediate cleanup.
+  Founder's primary account should not be used for repeated synthetic
+  testing.
+
 ---
 
 ## Deferred deliberate cutovers
