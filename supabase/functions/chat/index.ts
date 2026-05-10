@@ -1080,7 +1080,11 @@ async function scorePatternRelevance(params: {
 }): Promise<Array<{ id: string; score: number }>> {
   const { message, recentMessages, candidates, queryEmbedding, openaiKey } = params;
 
-  if (!queryEmbedding || candidates.length === 0) return [];
+  if (!queryEmbedding || candidates.length === 0) {
+    // Iter 2 (2026-05-10): observability per guard direction. Log short-circuits.
+    console.log(`[PATTERN_RELEVANCE] short-circuit at entry: queryEmbedding=${queryEmbedding ? "present" : "null"} candidates=${candidates.length}`);
+    return [];
+  }
 
   // Step 1: embedding pre-filter. Embed each candidate description in
   // parallel; cosine similarity vs queryEmbedding; keep top-3 with
@@ -1096,6 +1100,14 @@ async function scorePatternRelevance(params: {
     .filter((c): c is NonNullable<typeof c> => c !== null && c.similarity >= 0.4)
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, 3);
+
+  // Iter 2 (2026-05-10): always log preFilter outcome — diagnoses whether
+  // the embedding-similarity floor of 0.4 was the gate that closed.
+  console.log(
+    `[PATTERN_RELEVANCE] preFiltered=${preFiltered.length}/${candidates.length}` +
+    ` top_sim=${preFiltered[0]?.similarity?.toFixed(3) ?? "n/a"}` +
+    ` all_sims=${JSON.stringify(embedded.map((c) => c?.similarity != null ? Number(c.similarity.toFixed(3)) : null))}`,
+  );
 
   if (preFiltered.length === 0) return [];
 
@@ -1154,7 +1166,7 @@ async function scorePatternRelevance(params: {
       ? parsed
       : (parsed as { scores?: unknown[] }).scores ?? [];
 
-    return arr
+    const final = arr
       .map((x): { id: string; score: number } | null => {
         if (typeof x !== "object" || x === null) return null;
         const xx = x as Record<string, unknown>;
@@ -1163,6 +1175,16 @@ async function scorePatternRelevance(params: {
       })
       .filter((x): x is { id: string; score: number } => x !== null)
       .sort((a, b) => b.score - a.score);
+
+    // Iter 2 (2026-05-10): always log scored output — diagnoses whether the
+    // 0.7 surface threshold was the gate that closed (vs no scores returned,
+    // vs scores returned but below threshold, vs parsing dropped entries).
+    console.log(
+      `[PATTERN_RELEVANCE] scored=${JSON.stringify(final.map((s) => ({ id: s.id.slice(0, 8), score: Number(s.score.toFixed(2)) })))}` +
+      ` raw_count=${arr.length}`,
+    );
+
+    return final;
   } catch (err) {
     clearTimeout(timer);
     console.error(`[PATTERN_RELEVANCE] exception — fail closed:`, err);
@@ -2386,8 +2408,7 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
       systemPrompt += `\n\n## OVERDUE REVIEWS\nThese decisions are past their review date. Gently remind the user if appropriate:\n${overdueLines.join("\n")}`;
     }
 
-    // ─── §10.7.A Proactive Surfacing gates (Stage 2A PR-2) ───
-    // Replaces the prior keyword-only intervention prototype with a
+    // ─── §10.7.A Proactive Surfacing gates (Stage 2A PR-2, iter 2) ───
     // 5-gate chain per architecture §10.7.A:
     //   gate 2  — confidence ≥ 0.65          (filtered at DB query above)
     //   gate 3  — relevance_score ≥ 0.7      (hybrid embedding + LLM here)
@@ -2395,22 +2416,35 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
     //   gate 4b — dismissed_at IS NULL       (filtered at DB query above)
     //   gate 5  — 7-day cooldown OR new evidence      (checked here)
     // Plus per-day cap of 3 and per-turn cap of 1.
-    // Failure mode: any LLM error → no surface ("better silent than wrong"
-    // per founder brief). Decisions-due surfacing (above) is unaffected
-    // by this gate — patterns-only scope per guard direction 2026-05-09.
+    // Failure mode: any LLM error → no surface ("better silent than wrong").
+    // Decisions-due surfacing (above) is unaffected — patterns-only scope.
+    //
+    // ITERATION 2 CHANGES (2026-05-10 guard direction after Phase A test):
+    //   1. Added [PATTERN_INTERVENTION] log lines at every gate-chain branch
+    //      so we can diagnose silent fail-closed paths in scorePatternRelevance.
+    //   2. REMOVED the passive listing block ("## BEHAVIOUR PATTERNS YOU'VE
+    //      DETECTED ... Mention these if relevant"). Iteration 1 surfaced an
+    //      architectural concern: feeding eligible patterns to the main LLM
+    //      as ambient context produced ungoverned surfaces — the LLM weaved
+    //      pattern descriptions into responses without going through the
+    //      audit/cooldown/dismiss/surfacing_count machinery. Bypassed
+    //      §10.7.A's governance discipline. Per guard option (a) 2026-05-10:
+    //      if the gate chain doesn't fire, NO pattern context reaches the
+    //      main LLM. Surfacing is a deliberate, governed act — not an
+    //      ambient byproduct.
     const matchedPatternIds: string[] = [];
 
-    // Gate 4a — toggle. Default true; if user disabled in /settings,
-    // skip the entire pattern intervention block.
+    // Gate 4a — toggle.
     const proactiveEnabled =
       (identity as { proactive_surfacing_enabled?: boolean } | null)
         ?.proactive_surfacing_enabled !== false;
 
+    if (!proactiveEnabled) {
+      console.log(`[PATTERN_INTERVENTION] toggle=off, skipping (user ${user.id.slice(0, 8)})`);
+    }
+
     if (proactiveEnabled && patterns.length > 0) {
-      // Gate 5 — cooldown OR new evidence. Surface allowed if:
-      //   last_surfaced_at IS NULL (never surfaced)
-      //   OR last_surfaced_at < 7 days ago
-      //   OR last_seen_at > last_surfaced_at (new evidence since last surface).
+      // Gate 5 — cooldown OR new evidence.
       const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const eligibleByCooldown = patterns.filter((p) => {
         if (!p.last_surfaced_at) return true;
@@ -2420,19 +2454,21 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
         return false;
       });
 
-      // Per-day cap: ≤ 3 surfacings per UTC day per user. Counted from
-      // the patterns array (RLS-scoped to this user via the original query,
-      // so the count is per-user and current).
+      // Per-day cap (≤ 3 per UTC day per user).
       const startOfUtcDayMs = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
       const todaySurfacedCount = patterns.filter(
         (p) => p.last_surfaced_at && new Date(p.last_surfaced_at).getTime() >= startOfUtcDayMs,
       ).length;
       const dailyCapHit = todaySurfacedCount >= 3;
 
+      console.log(
+        `[PATTERN_INTERVENTION] gate-chain entry: patterns=${patterns.length} eligibleByCooldown=${eligibleByCooldown.length}` +
+        ` todaySurfacedCount=${todaySurfacedCount} dailyCapHit=${dailyCapHit} user=${user.id.slice(0, 8)}`,
+      );
+
       if (eligibleByCooldown.length > 0 && !dailyCapHit) {
         // Gate 3 — hybrid relevance scoring. Embedding pre-filter (top-3,
-        // sim ≥ 0.4) then gpt-4o-mini LLM evaluation. Per-turn cap of 1:
-        // we surface only the highest-scoring pattern that passes ≥ 0.7.
+        // sim ≥ 0.4) then gpt-4o-mini LLM evaluation. Per-turn cap of 1.
         const recentMessages = (history || []).slice(-3).map((m) => ({
           role: (m as { role?: string }).role ?? "user",
           content: (m as { content?: string }).content ?? "",
@@ -2462,11 +2498,8 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
           );
 
           // Atomic UPDATE behaviour_patterns + INSERT audit_log via the
-          // record_pattern_surfacing RPC (Stage 2A PR-2a migration). The
-          // user-JWT-bearing supabase client satisfies the RPC's
-          // auth.uid() ownership check. Fail-open per packet §4: if the
-          // RPC errors, log and continue — the surface already rendered,
-          // the audit/cooldown lags. Standalone statement (C73 discipline).
+          // record_pattern_surfacing RPC (Stage 2A PR-2a migration).
+          // Fail-open: log and continue if the RPC errors.
           const { error: rpcErr } = await supabase.rpc("record_pattern_surfacing", {
             p_pattern_id: surfaced.id,
             p_relevance_score: topMatch.score,
@@ -2477,21 +2510,31 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
               `[PATTERN_INTERVENTION] record_pattern_surfacing failed pattern=${surfaced.id.slice(0, 8)}: ${rpcErr.message}`,
             );
           }
+        } else {
+          console.log(
+            `[PATTERN_INTERVENTION] no surface: top_score=${scored[0]?.score?.toFixed(2) ?? "no_scores"}` +
+            ` scored_count=${scored.length} eligible_count=${eligibleByCooldown.length}` +
+            ` user=${user.id.slice(0, 8)}`,
+          );
         }
-        // else: no pattern scored ≥ 0.7 → silent (fail closed)
+      } else if (dailyCapHit) {
+        console.log(
+          `[PATTERN_INTERVENTION] daily cap hit (count=${todaySurfacedCount}); no surface user=${user.id.slice(0, 8)}`,
+        );
+      } else {
+        console.log(
+          `[PATTERN_INTERVENTION] no patterns survived cooldown filter; no surface user=${user.id.slice(0, 8)}`,
+        );
       }
 
-      // Passive listing — eligible patterns we didn't surface this turn.
-      // Provides general LLM awareness without forcing surfacing. Excludes
-      // the one we just surfaced (if any) to avoid duplicate mention.
-      const surfacedId = matchedPatternIds[0];
-      const passivePatterns = eligibleByCooldown.filter((p) => p.id !== surfacedId);
-      if (passivePatterns.length > 0) {
-        const patternLines = passivePatterns.map(
-          (p) => `- [${p.pattern_type}] ${p.description} (seen ${p.evidence_count} times)`,
-        );
-        systemPrompt += `\n\n## BEHAVIOUR PATTERNS YOU'VE DETECTED\nMention these if relevant, but they are not triggered by the current message:\n${patternLines.join("\n")}`;
-      }
+      // Passive listing path: REMOVED in iter 2 per guard option (a) 2026-05-10.
+      // Pre-iter-2 added eligible pattern descriptions to systemPrompt as
+      // "## BEHAVIOUR PATTERNS YOU'VE DETECTED\nMention these if relevant".
+      // The main LLM would weave them into responses without going through
+      // the §10.7.A gate audit/cooldown/dismiss/count machinery — an
+      // ungoverned parallel surface path. Removed for cleanest semantics.
+      // A future Stage 2B may design a governed "passive surface" code path
+      // with its own surfacing_count + audit action — not in 2A scope.
     }
 
     // Architecture v5.7 sec.10.10.7: progress event for decision/pattern check.
