@@ -83,6 +83,39 @@ prototype.**
   Cleanup: DELETE after Stage 2A PR-2b verification passes (when test-mode
   flag is in place and gate chain confirmed working).
 
+### Stage 2A open issue — ungoverned passive surfaces (resolved in iter 2)
+
+The pre-PR-2b chat function intervention prototype added eligible
+patterns to the system prompt as a "## BEHAVIOUR PATTERNS YOU'VE
+DETECTED\nMention these if relevant" block. The main LLM (gpt-4o)
+weaved those descriptions into responses, surfacing patterns to the
+user **without** going through the §10.7.A gate chain — bypassing
+the audit_log INSERT, the cooldown update, the surfacing_count
+increment, and the per-pattern dismiss check. The user saw
+pattern-aware advice; the substrate didn't record that it surfaced.
+
+This was discovered 2026-05-10 when the Phase A end-to-end test
+showed the chat response correctly mentioned pattern A's evidence
+but no `:::pattern :::` callout markers were present AND
+`surfacing_count` stayed at 0 with no `audit_log` row.
+
+**Fix shipped in Stage 2A PR-2b iteration 2 (2026-05-10, chat fn
+v74, guard direction option (a)):** the passive listing block was
+removed entirely. If the gate chain doesn't trigger, the main LLM
+gets NO pattern context — surfacing is a deliberate, governed act,
+not an ambient byproduct of context. Also added observability log
+lines at every gate-chain decision point so silent fail-closed
+paths in `scorePatternRelevance` are now visible in `get_logs`.
+
+**Forward consideration (Stage 2B):** if user-visible "pattern
+awareness without explicit callout" is desired, design a governed
+"passive surface" code path with its own `surfacing_count_passive`
+counter and an `audit_log` action like `pattern_surfaced_passive`.
+That would preserve the UX while keeping §10.7.A governance intact.
+Decision deferred until Stage 2A surfacing rates show whether the
+strict-gate-only behaviour leaves users without enough pattern
+awareness in practice.
+
 ## Stage 2A scope (5 sub-PRs per the 2026-05-09 review packet)
 
 - **PR-1: Schema migration** — IN FLIGHT (PR-A above)
