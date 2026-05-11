@@ -48,12 +48,40 @@ prototype.**
 
 **2A in flight:**
 
-- **PR-A** — Stage 2A schema migration: `identity_profiles.proactive_surfacing_enabled`
-  + `behaviour_patterns.{last_surfaced_at, surfacing_count, dismissed_at,
-  dismissed_reason}` + supporting index. **Open, awaiting guard review.**
+- **Stage 2A PR-2b — STATUS: deployed but NOT verified** (as of 2026-05-11 EOD).
+  Chat function **v74 active on production** with the §10.7.A 5-gate
+  chain + observability + passive-listing removal. Tracking issue:
+  https://github.com/osemudiameh-abraham/mind-weave-ledger/issues/61
+  - 7 / 9 SQL-fidelity phases pass (gate logic at DB query layer +
+    in-memory filters all correct).
+  - 0 / 2 browser-level Phase A tests produced the `:::pattern :::`
+    callout. Pattern-aware prose in responses came from §2.1 memory
+    retrieval, not from the §10.7.A gate chain.
+  - **Verification blocked by C78** (test-mode flag): cannot
+    cleanly distinguish "gate is broken" from "gate is correctly
+    silent because §2.1 memory retrieval is dominant" without
+    test-mode isolation. Even after clean-slate ops on
+    2026-05-11, a genuine 13 April memory entry produced the same
+    pattern-aware-prose-without-callout outcome — and that entry
+    is real user data we cannot delete.
+  - Open PRs that stay draft tonight: **#57** (RPC migration audit
+    trail — already applied to production), **#58** (chat gates
+    iter-2 — code matches deployed v74), **#59** (PHASE_BOARD
+    iter-2 note).
+  - Synthetic seeds: pristine. `surfacing_count=0`,
+    `last_surfaced_at=null`, `dismissed_at=null`, `_synthetic=true`
+    preserved, descriptions clean (no `[SYNTHETIC TEST]` prefix).
+  - Founder's substrate today: zero rows in `messages` /
+    `memories_structured` / `memory_facts` / `memory_traces` for
+    `created_at >= 2026-05-10` (full clean-slate ops 1-5 ran).
+- **PR-A** — Stage 2A schema migration: applied to production
+  2026-05-09. PR #55 stays open as documentation; merge to develop
+  whenever convenient. Identical schema in `identity_profiles` and
+  `behaviour_patterns` already live.
 - Synthetic patterns seeded for the founder account (2 rows, scan_id =
   `synthetic_2A_smoke_test`, `trigger_conditions._synthetic = true`).
-  Cleanup: DELETE after Stage 2A verification passes.
+  Cleanup: DELETE after Stage 2A PR-2b verification passes (when test-mode
+  flag is in place and gate chain confirmed working).
 
 ## Stage 2A scope (5 sub-PRs per the 2026-05-09 review packet)
 
