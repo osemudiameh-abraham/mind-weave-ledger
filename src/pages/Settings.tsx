@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Mic,
   AudioLines,
+  Lightbulb,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -85,6 +86,14 @@ const Settings = () => {
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
   const [devicesSheetOpen, setDevicesSheetOpen] = useState(false);
 
+  // §10.7.A Proactive Surfacing toggle. Default ON per the column's
+  // NOT NULL DEFAULT true (migration 20260509000000). Hydrated from
+  // identity_profiles in the load() useEffect below. proactivePending
+  // gates the toggle during the DB write (§15.10 quality bar: loading
+  // state, optimistic UI, rollback on error).
+  const [proactiveEnabled, setProactiveEnabled] = useState(true);
+  const [proactivePending, setProactivePending] = useState(false);
+
   // Gmail connection — check oauth_tokens table
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailConnecting, setGmailConnecting] = useState(false);
@@ -114,7 +123,7 @@ const Settings = () => {
     let cancelled = false;
 
     const load = async () => {
-      const [prefsRes, gmailRes] = await Promise.all([
+      const [prefsRes, gmailRes, identityRes] = await Promise.all([
         supabase
           .from("user_preferences")
           .select("push_enabled, email_reminders, theme, always_listening_enabled")
@@ -125,6 +134,11 @@ const Settings = () => {
           .select("id")
           .eq("user_id", user.id)
           .eq("provider", "gmail")
+          .maybeSingle(),
+        supabase
+          .from("identity_profiles")
+          .select("proactive_surfacing_enabled")
+          .eq("user_id", user.id)
           .maybeSingle(),
       ]);
 
@@ -153,6 +167,14 @@ const Settings = () => {
         if (dbAlways !== alwaysListeningEnabled) {
           setAlwaysListeningEnabled(dbAlways);
         }
+      }
+
+      if (identityRes.data) {
+        const i = identityRes.data as { proactive_surfacing_enabled: boolean | null };
+        // Column is NOT NULL with default true in schema (migration
+        // 20260509000000); the null coalesce is belt-and-suspenders for
+        // any pre-migration row that somehow reads null.
+        setProactiveEnabled(i.proactive_surfacing_enabled ?? true);
       }
 
       setGmailConnected(!!gmailRes.data);
@@ -255,6 +277,51 @@ const Settings = () => {
       toast("Always Listening disabled");
     }
   };
+
+  // §10.7.A Proactive Surfacing toggle handler. Writes to
+  // identity_profiles.proactive_surfacing_enabled (column shipped in
+  // PR #55 / migration 20260509000000). The deployed v74 chat function
+  // reads this column on every chat turn; flipping the toggle takes
+  // effect on the next conversation.
+  //
+  // Sets the new §15.10 quality bar for this file: loading state,
+  // optimistic UI, rollback + error toast on failure. Existing toggles
+  // in this file don't yet match (tracked separately in issue #63).
+  //
+  // Upsert is used instead of update (guard direction Q6 2026-05-11):
+  // handles the missing-row edge case explicitly. RLS unchanged — the
+  // user can only upsert their own identity_profiles row via the
+  // existing own-row policy.
+  const handleToggleProactiveSurfacing = useCallback(async () => {
+    if (!user || proactivePending) return;
+    const prev = proactiveEnabled;
+    const next = !prev;
+
+    setProactivePending(true);
+    setProactiveEnabled(next);  // optimistic
+
+    const { error } = await supabase
+      .from("identity_profiles")
+      .upsert(
+        { user_id: user.id, proactive_surfacing_enabled: next },
+        { onConflict: "user_id" },
+      );
+
+    setProactivePending(false);
+
+    if (error) {
+      setProactiveEnabled(prev);  // rollback
+      toast.error("Couldn't save preference — try again");
+      console.error("[SETTINGS] Failed to update proactive_surfacing_enabled:", error.message);
+      return;
+    }
+
+    toast(
+      next
+        ? "Seven will bring up patterns when relevant"
+        : "Seven won't surface patterns proactively",
+    );
+  }, [user, proactiveEnabled, proactivePending]);
 
   const handleThemeChange = (mode: ThemeMode) => {
     setTheme(mode);
@@ -412,6 +479,22 @@ const Settings = () => {
           label: "Wake Word",
           desc: `"${alwaysListeningFallback ? "Computer" : wakeWord}"`,
           action: () => toast("Wake word is set during build. Contact support to request a different keyword."),
+        },
+      ],
+    },
+    {
+      title: "Chat Behaviour",
+      items: [
+        {
+          icon: Lightbulb,
+          label: "Bring up patterns before answering when relevant",
+          desc: proactiveEnabled
+            ? "Enabled — pattern detection continues regardless"
+            : "Off — Seven won't surface patterns proactively. Pattern detection continues.",
+          toggle: true,
+          toggled: proactiveEnabled,
+          loading: proactivePending,
+          action: handleToggleProactiveSurfacing,
         },
       ],
     },
