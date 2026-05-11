@@ -119,6 +119,210 @@ that requires explicit founder + guard review.
 
 ---
 
+## Open architectural questions for v5.8
+
+### C77 (candidate) — substrate-vs-memory-retrieval governance boundary
+
+**Discovered:** 2026-05-10, during Stage 2A PR-2b end-to-end testing.
+
+**Finding:** the substrate has indexed its own ungoverned output as
+memory. Pattern-aware prose generated through an ungoverned path
+(passive listing, chat function v73) was persisted in the `messages`
+table and is now being retrieved by semantic memory on subsequent turns
+as "relevant past context." The substrate effectively remembers what
+to say about a topic without going through pattern governance.
+
+This is **not a code bug.** It's a category confusion between two
+distinct surfaces:
+
+- **§2.1 Total Recall (memory retrieval)** — supposed to surface prior
+  context, ungoverned by design.
+- **§10.7.A Proactive Surfacing (pattern gates)** — governed surface
+  with audit/cooldown/dismiss/count.
+
+When the §10.7.A path produces output that gets persisted, that output
+becomes §2.1 fodder on future turns. **Governance erodes over time as
+ungoverned outputs accumulate in message history.**
+
+**Engineering implications:**
+
+1. Stage 2A PR-2b's verification criteria (callout marker + `surfacing_count`
+   + `audit_log`) test the §10.7.A path in isolation. They cannot
+   distinguish "§10.7.A working correctly with empty substrate" from
+   "§10.7.A working correctly but §2.1 producing parallel content."
+2. Cleaning up memory history is a one-time fix that doesn't address
+   the architectural question.
+3. **Long-term:** assistant response persistence should distinguish
+   substrate-derived content from gate-derived content. Pattern callouts
+   (governed) should be persisted with metadata flagging their origin;
+   pattern-aware prose from any path should NOT be indexed as
+   patternable memory.
+
+**Resolution path:** assistant response persistence should flag whether
+output came from a governed surface so memory retrieval can decide
+whether to suppress, flag, or surface neutrally. **Deferred to v5.8
+architecture review as a design session — not a Stage 2A fix.**
+
+**Revised Stage 2A PR-2b acceptance criteria** (per this finding,
+guard direction 2026-05-10):
+
+Stage 2A PR-2b is verified when:
+1. The gate chain fires correctly when conditions are met (the
+   `:::pattern :::` callout IS rendered, RPC IS called, audit row IS
+   written, `surfacing_count` IS incremented).
+2. The gate chain does NOT fire when conditions are not met (no callout
+   when toggle off, cooldown active, dismissed, etc.).
+3. The presence of pattern-aware prose from §2.1 memory retrieval is
+   **out of scope** for Stage 2A PR-2b verification — that's the
+   §10.7.A vs §2.1 boundary question for v5.8.
+
+### C78 (candidate) — testing in production contaminates the substrate
+
+**Discovered:** 2026-05-11, during Stage 2A PR-2b iteration 2 testing.
+
+**Finding:** Behavioral intelligence systems testing in production
+contaminates the substrate's understanding of the user. Across three
+Phase A retest turns (05:36, 21:16, 22:02, 23:59 UTC), the founder
+sent variants of "I'm thinking of pulling an all-nighter to finish
+this project tonight." Each turn was persisted to `messages` with no
+distinguishing marker. The substrate now treats those test inputs as
+**real stated intentions**: Seven's most recent response opened with
+"You've decided to pull an all-nighter tonight, as you've mentioned a
+few times today" — pure memory-retrieval content, treating synthetic
+test phrasings as genuine user data.
+
+Every additional test turn deepens the contamination:
+- `messages.metadata` doesn't mark test-mode origin
+- Semantic memory retrieval surfaces test phrasings as "relevant past context"
+- Pattern detection (when running) would include test inputs in 90-day windows
+- `identity_model` updates (when running) would weight test inputs as real signal
+- `cron-identity-model.communication_style` would learn from test interactions
+
+**Resolution path:** a `test mode` flag at the chat function level —
+passed via header (`x-seven-test-mode: 1`) or query param — should mark
+generated messages with `metadata.test_mode = true` and exclude them
+from:
+- Memory retrieval (`match_memories` RPC + `recentMems` queries)
+- Pattern detection inputs (`cron-pattern-detection`'s decision/outcome/
+  memory data fetches)
+- Identity model updates (`cron-identity-model`)
+- Feedback signal aggregation (`cron-identity-model` reading
+  `feedback_signals`)
+
+Without this, founders and engineers cannot test substrate response to
+synthetic situations without polluting their own behavioral data —
+making the substrate worse than it would be if testing happened on
+isolated accounts.
+
+**Engineering implications:**
+
+1. Stage 2A test history needs a one-time cleanup (DELETE founder's
+   2026-05-10/11 test turns from `messages`) to restore a clean baseline
+   before further testing. **Awaiting explicit founder approval; not
+   executed yet.**
+2. Stage 2A's synthetic pattern seeds (in `behaviour_patterns`) have a
+   `_synthetic = true` marker via `trigger_conditions` JSONB — that's
+   the right pattern. Apply the same discipline to test messages.
+3. Long-term: test mode is an v5.8 architectural addition, not a fix
+   we can backport surgically in 2A. **Deferred to v5.8 architecture
+   review** alongside C77.
+
+**Linked C77 dependency:** C77's resolution ("flag governed vs
+ungoverned surface origin in persisted output") naturally extends to
+C78's resolution ("flag test-mode origin in persisted input"). Both
+require persistence-layer metadata that distinguishes data provenance.
+A v5.8 design session should address both together.
+
+### C79 (candidate) — extraction pipeline absorbs test inputs as real identity data
+
+**Discovered:** 2026-05-11, during Stage 2A PR-2b clean-slate scoping.
+
+**Finding:** the chat function's tier-2 / tier-3 memory-extraction
+pipeline (fact extractor, memory persistence, importance scorer) does
+not distinguish hypothetical phrasings from declarative commitments.
+Within hours of starting Phase A testing today, the substrate had:
+
+- 4 polluted rows in `memories_structured` (verbatim test phrasings
+  stored as `memory_type='chat'`, `importance=5`)
+- **2 polluted facts in `memory_facts` (status='active', confidence=0.8):**
+  - `user.goal = "finish this project tonight"` (category=goals)
+  - `user.action = "pulling an all-nighter"` (category=habits)
+- 4 trace rows in `memory_traces` (access logs)
+
+The two `memory_facts` rows are the most concerning. They were
+extracted from messages like *"I'm thinking of pulling an all-nighter
+to finish this project tonight"* — a hypothetical/exploratory framing.
+The extractor treated this as a **declarative statement of habit and
+goal**, persisted as active facts with 0.8 confidence, and injected
+them into the system prompt's IDENTITY GROUNDING block on every
+subsequent chat turn (line ~2000-area in `chat/index.ts`,
+`memory_facts WHERE status='active' AND valid_until IS NULL`).
+
+So for the entire period between this morning's first test and the
+clean-slate operations: every chat turn — including unrelated ones —
+told Seven that the founder's user-level habits include "pulling an
+all-nighter" and goals include "finish this project tonight." This is
+**substrate-level identity pollution** propagating from test inputs
+in <1 turn cycle: `messages` → `memories_structured` (importance scorer)
+→ `memory_facts` (tier-2/3 extractor) → `system_prompt.IDENTITY_GROUNDING`
+on the very next turn.
+
+This compounds **C78** (test-mode flag at persistence layer) with a
+second independent concern: even when an input is real-mode, the
+fact extractor should not treat hypothetical phrasings as declarative.
+
+**v5.8 design requirements:**
+
+1. **C78 test-mode flag must propagate through the extraction pipeline.**
+   Tier-2/3 extractors (in `chat/index.ts:1460-1820` area —
+   factExtract, memExtract, decExtract, outcomeExtract, sitExtract,
+   resolveExtract paths) must check `metadata.test_mode` on the source
+   message and **skip extraction entirely** for test inputs. Without
+   this, even a perfect `messages.metadata.test_mode=true` flag at the
+   persistence layer doesn't stop the substrate from extracting test
+   inputs as facts.
+
+2. **Hypothetical-vs-declarative classification (separate quality
+   concern).** Fact extraction should distinguish:
+   - Hypothetical: *"I'm thinking of...", "Should I...", "I might...",
+     "What if I..."*
+   - Declarative: *"I plan to...", "I've decided to...", "I do this..."*
+   Only declarative phrasings should produce active facts in
+   `memory_facts`. This is independent of test mode — it's a
+   precision-of-extraction concern that affects real-mode inputs too.
+   Real users frame intentions hypothetically more often than not;
+   the current extractor over-claims.
+
+3. **Audit trail on extracted facts.** Every fact row should have a
+   `source_message_id` AND a `source_phrasing_type` (hypothetical /
+   declarative / observed-behaviour / user-stated-belief) so the
+   Memory Surface §10.13.4 can show the user what was extracted and
+   why, with the ability to dispute the extraction. The current
+   `feedback_signals` infrastructure (Stage 2A PR-1) extends naturally.
+
+**Linked C77/C78 dependency:** all three findings (C77 governed-vs-
+ungoverned surface origin, C78 test-mode flag at persistence, C79
+extraction pipeline test-mode propagation + hypothetical detection)
+share a common architectural root: the substrate's data-provenance
+metadata is too sparse. Every persisted unit (message, memory, fact,
+trace, audit row) needs richer provenance: who generated it, in what
+mode, from what source phrasing, with what governance gate. The v5.8
+design session should treat these three as one design surface.
+
+**Engineering implications for Stage 2A:**
+
+- Stage 2A PR-2b acceptance criteria unchanged — gate-chain isolation
+  test is the verification target. Clean-slate operations on 2026-05-11
+  removed today's test pollution; future tests should be one-shot to
+  minimize re-pollution while v5.8's test-mode flag is unbuilt.
+- Until v5.8 ships test-mode + extraction discipline, **engineering
+  testing of Seven Mynd's substrate must happen on a non-production
+  test account** or with one-shot tests followed by immediate cleanup.
+  Founder's primary account should not be used for repeated synthetic
+  testing.
+
+---
+
 ## Deferred deliberate cutovers
 
 These are bundles intentionally held off `main` until they have a
