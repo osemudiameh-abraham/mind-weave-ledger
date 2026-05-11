@@ -490,7 +490,7 @@ const Settings = () => {
           label: "Bring up patterns before answering when relevant",
           desc: proactiveEnabled
             ? "Enabled — pattern detection continues regardless"
-            : "Off — Seven won't volunteer observations, but the substrate keeps learning",
+            : "Off — Seven won't surface patterns proactively. Pattern detection continues.",
           toggle: true,
           toggled: proactiveEnabled,
           loading: proactivePending,
