@@ -382,6 +382,147 @@ design session should treat these three as one design surface.
   Founder's primary account should not be used for repeated synthetic
   testing.
 
+### C80 (candidate) — document-process writes orphan facts (no provenance link)
+
+**Discovered:** 2026-05-12 during Phase 1A forensic investigation
+into 8 unexplained `memory_facts` rows (UK Ltd-company compliance
+costs, founder account, 2026-05-11 14:08:50 UTC). Writer was
+positively identified as `document-process` via payload fingerprint
+(confidence=0.7 + source_type="inferred" + category="cost" — unique
+to that writer; chat uses 0.8/0.9, Vault UI uses 1.0/"corrected").
+
+**Finding:** `document-process/index.ts:328` inserts `memory_facts`
+rows with `evidence_count = 1` (hardcoded literal) but **never writes
+the corresponding `memory_fact_evidence` rows** that would link each
+fact back to its source document chunk in `memories_structured`.
+Confirmed empirically: `memory_fact_evidence` has zero rows linked to
+the 8 facts. By contrast, `document-process` DOES write source
+provenance for chunks (`memories_structured.source_message_id =
+'doc_${document_id}_chunk_${i}'`, line 305) and decisions
+(`decisions.source_message_id = 'doc_${document_id}_decision'`, line
+351). The fact-write path simply omits the evidence-row insert.
+
+Result: every fact written by `document-process` is orphan in the
+provenance graph. Cannot trace facts back to source documents from
+the database alone. The `evidence_count = 1` value is a misleading
+literal, not a count of actual evidence rows.
+
+**Affected surfaces:**
+
+- **Memory Surface §10.13.4 — "Where did Seven learn this?"** UX
+  cannot show the source for any document-derived fact. The Memory
+  panel will display orphan facts with no traceable origin, breaking
+  the audit-trail promise of §10.13.
+- **Fact-dispute flow.** Without evidence linkage, a user disputing
+  a fact has no way to see the source document/chunk that produced
+  it. This blocks Memory Surface §10.13.6 (audit panel) for any
+  document-derived fact.
+- **C79 v5.8 design.** C79's "Audit trail on extracted facts"
+  requirement (source_message_id + source_phrasing_type on every
+  fact row) needs to extend to document-derived facts too. C80 is
+  the document-process-specific instance of the C79 provenance
+  problem.
+
+**Fix:** `document-process` should, immediately after each
+`memory_facts.insert`, also insert a `memory_fact_evidence` row
+linking the returned fact_id to the chunk's `memories_structured.id`.
+Or restructure the doc-process pipeline to write facts via a
+canonical helper that owns both inserts atomically.
+
+**Effort estimate:** medium. The chunk → fact linkage is not 1:1 in
+the current pipeline (doc-process produces a flat list of facts +
+chunks; figuring out which chunk supports which fact requires either
+re-running the LLM extraction with per-fact source-chunk attribution
+OR a post-hoc nearest-chunk match by embedding). Defer to v6
+document-process refactor where the per-fact source attribution can
+be designed in from the start.
+
+**Action:** captured here for v5.8 design session alongside C79. Not
+fixed in Phase 1A — purely an observability gap, not a security
+finding.
+
+### C81 (candidate) — audit_log silent since 2026-05-05 (recently broken, not legacy)
+
+**Discovered:** 2026-05-12 during Phase 1A diagnostic. Empty
+`audit_log` query on 2026-05-11 (zero rows for the entire day despite
+document processing, RPC deploy, and Memory Surface feedback writes)
+prompted the diagnostic.
+
+**Diagnostic result:**
+
+```
+most_recent_audit:  2026-05-05 14:28:46 UTC
+earliest_audit:     2026-04-17 13:24:13 UTC
+total_rows:         78
+rows since May 1:   12 (all between May 1 and May 5)
+rows since Apr 1:   78 (= all rows in the table)
+```
+
+**Verdict: recently broken, not legacy.** `audit_log` was actively
+being written from 2026-04-17 through 2026-05-05 (78 rows in ~18
+days, ~4 rows/day). **Writes stopped abruptly on 2026-05-05.** No
+audit rows have been written in the 7 days since, despite:
+
+- 2026-05-05 PR #41 (document staging UX rebuild) ship
+- 2026-05-08 Memory Surface §10.13.1 feedback unblocker (PRs #47,
+  #48, #49) — Memory Surface §10.13.6 audit panel design EXPECTS
+  feedback-write actions to land in `audit_log`
+- 2026-05-09 Stage 2A-prereq (PRs #50, #51, #52, #53)
+- 2026-05-09 Stage 2A PR-1 (schema migration to production)
+- 2026-05-09 Stage 2A PR-2a (`record_pattern_surfacing` RPC deploy —
+  this RPC's design explicitly writes to `audit_log` per §10.7.A)
+- 2026-05-11 PR #64 (Stage 2A PR-3 settings toggle)
+- 2026-05-11 document-process invocation (the 8 compliance facts)
+
+The 2026-05-05 cutoff correlates with PR #41 ship — investigate
+whether something in that PR (or its post-merge schema/permissions
+state) broke `audit_log` writes silently.
+
+**Hypotheses (to investigate in Phase 1B/1C):**
+
+1. **RLS regression.** `audit_log` has RLS enabled with 1 policy
+   (confirmed via `pg_class` scan). If the policy's `WITH CHECK`
+   clause was tightened around 2026-05-05 in a way that excludes
+   the writers' role (e.g., now requires `auth.uid() = user_id` for
+   a write that runs as service_role with no JWT), writes would
+   fail silently because most callers don't surface insert errors.
+2. **Schema drift.** A column was added/renamed/CHECKed in a way
+   that breaks the writers' `INSERT (...)` shape, and the failure
+   is being swallowed.
+3. **Code regression.** A helper that wraps `audit_log.insert(...)`
+   was refactored on 2026-05-05 in PR #41 and now no-ops silently.
+4. **Audit writes were never wired up after PR-2a's RPC pattern.**
+   The `record_pattern_surfacing` RPC was designed to write
+   `audit_log` rows but may have shipped without that path. (Less
+   likely — predates the 2026-05-05 cutoff in design intent.)
+
+**Affected surfaces:**
+
+- **Memory Surface §10.13.6 audit panel.** UX cannot be built — no
+  data to display.
+- **§10.7.A Proactive Surfacing observability.** The gate-chain
+  audit row is part of the verification criteria for Stage 2A PR-2b.
+  If audit writes are silently failing across the board,
+  `record_pattern_surfacing`'s audit row would also fail —
+  potentially explaining part of the Stage 2A PR-2b verification
+  difficulty (though C77/C78 are the main blockers).
+- **Phase 1 security audit trail.** No audit record of any sensitive
+  action since 2026-05-05. Six days of writes, RPC calls, and
+  Memory Surface feedback have produced zero audit rows. This is a
+  compliance-flavoured gap.
+
+**Phase 1A interaction:** C81 does NOT block the RLS migrations M1/
+M2/M3. But it does suggest that when M3 enables RLS on
+`memory_fact_evidence`, we should pre-flight whether `audit_log`'s
+RLS state (already enabled, 1 policy) is the same kind of writer-
+excluding policy. If so, the same fix pattern can apply.
+
+**Action:** Phase 1B/1C investigation. Pull PR #41's diff against
+the `audit_log` writers (find every `from("audit_log").insert(...)`
+in the codebase, compare against the table schema as of 2026-05-04
+vs current). Captured here so it doesn't get lost in the Phase 1A
+migration work.
+
 ---
 
 ## Deferred deliberate cutovers
@@ -507,6 +648,45 @@ are second-priority to the 3 ERROR-level RLS findings.
      and re-schedule after cleanup.
   4. Document the test/cron interaction in PHASE_BOARD or runbook so
      future operators understand why the cron is paused.
+
+## Deferred tech-debt
+
+### Pre-existing lint debt (logged 2026-05-12)
+
+`pnpm lint` exits 1 with 25 problems (8 errors + 17 warnings) across
+`src/` and `tailwind.config.ts`. Surfaced during C78 chat function
+pre-commit gates 2026-05-12. **C78 introduced zero new lint issues** —
+all 25 problems predate this work. Production chat function v74 (and
+now v75) was deployed with the lint state already in this condition;
+the lint bar has effectively been bypassed at deploy time for an
+unknown duration prior to 2026-05-12.
+
+**Errors (8):**
+- `src/components/ui/command.tsx:24` — `@typescript-eslint/no-empty-object-type`
+- `src/components/ui/textarea.tsx:5` — `@typescript-eslint/no-empty-object-type`
+- `src/hooks/use-deepgram-dictation.ts:60,137,199` — `no-empty` (×3)
+- `src/hooks/use-frame-capture.ts:46` — `prefer-const` (×2)
+- `tailwind.config.ts:116` — `@typescript-eslint/no-require-imports`
+
+**Warnings (17):** mostly `react-refresh/only-export-components` on
+shadcn primitives (×10 across `button.tsx`, `badge.tsx`, `form.tsx`,
+`navigation-menu.tsx`, `sidebar.tsx`, `sonner.tsx`, `toggle.tsx`,
+`AlwaysListeningContext.tsx`, `AuthContext.tsx`), plus
+`react-hooks/exhaustive-deps` (×2 in `LiveScreenShare.tsx` /
+`LiveVideoFeed.tsx`), plus unused-eslint-disable directives (×5 in
+`PageError.tsx`, `AlwaysListeningContext.tsx`, `Splash.tsx`,
+`PorcupineWakeWordService.ts`).
+
+**GH issue not filed:** `gh` CLI not installed in this environment as
+of 2026-05-12. Logged here pending gh availability for formal issue;
+guard direction was Option 3 of the C78 deploy report (defer rather
+than detour to install gh at the verification finish line).
+
+**Fix path:** 8 errors are mechanical 1-2 line fixes (~30-60 min
+total). Warnings are triage-required — some Fast Refresh hints on
+shadcn primitives may be acceptable given the library's design
+(utility re-exports alongside components is a shadcn pattern).
+Contained cleanup PR when bandwidth allows.
 
 ## Open blockers
 
