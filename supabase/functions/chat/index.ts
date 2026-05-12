@@ -1377,8 +1377,9 @@ async function runPostProcessing(params: {
   matchedPatternIds: string[];
   situations: { id: string; title: string }[];
   metadata: { source?: string } | null;
+  testMode: boolean;
 }): Promise<{ assistantCreatedAt: string | null }> {
-  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds, situations, metadata } = params;
+  const { supabase, userId, convoId, message, assistantContent, queryEmbedding, openaiKey, facts, decisions, patterns, recentMems, semanticMems, matchedPatternIds, situations, metadata, testMode } = params;
 
   // Store assistant response — capture created_at to return to caller, which
   // surfaces it to the frontend for the message-timestamp display (v5.7 §10.9).
@@ -1389,6 +1390,7 @@ async function runPostProcessing(params: {
       section_id: convoId,
       role: "assistant",
       content: assistantContent,
+      metadata: testMode ? { test_mode: true } : null,
     })
     .select("created_at")
     .single();
@@ -1398,7 +1400,8 @@ async function runPostProcessing(params: {
   // Tier 1: Heuristic gate — filter messages unlikely to contain facts (65% filtered, zero cost)
   // Tier 2: Regex patterns — extract common fact types without LLM (zero cost)
   // Tier 3: LLM extraction — GPT-4o-mini for complex/implicit facts (~$0.001/call)
-  {
+  // C78: skipped entirely when the turn is in test mode (no fact pollution).
+  if (!testMode) {
     try {
       // ── TIER 1: Heuristic Gate ──
       // Pure function, no async, under 5ms. Returns true if message likely contains extractable facts.
@@ -1574,9 +1577,13 @@ async function runPostProcessing(params: {
     } catch (extractionErr) {
       console.error("[EXTRACT] Pipeline failed:", extractionErr);
     }
+  } else {
+    console.log("[TEST_MODE] Skipping fact extraction pipeline");
   }
 
-  // Always store every user message as a memory with embedding
+  // Always store every user message as a memory with embedding.
+  // C78: in test mode the row is tagged so match_memories + recentMems
+  // queries exclude it for normal-mode turns (one-way pollution shield).
   const { error: memError } = await supabase.from("memories_structured").insert({
     user_id: userId,
     text: message,
@@ -1584,6 +1591,7 @@ async function runPostProcessing(params: {
     importance: 5,
     source_message_id: crypto.randomUUID(),
     embedding: queryEmbedding,
+    metadata: testMode ? { test_mode: true } : {},
   });
   if (memError) {
     console.error("[MEMORY_STORE] Failed to store memory:", memError.message, memError.details);
@@ -1591,7 +1599,7 @@ async function runPostProcessing(params: {
 
   // ─── Decision detection ───
   const decisionSignals = /\b(i decided|i'm going to|i will|i've decided|my decision|i choose|i commit)\b/i;
-  if (decisionSignals.test(message)) {
+  if (!testMode && decisionSignals.test(message)) {
     try {
       const decExtract = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -1637,7 +1645,7 @@ async function runPostProcessing(params: {
   // Detect when the user describes an outcome for an existing decision.
   // Signals: "it worked", "it failed", "it was mixed", "that didn't work", "it went well", etc.
   const outcomeSignals = /\b(it worked|it failed|it was mixed|that worked|that failed|didn't work|went well|went badly|was a mistake|turned out|outcome was|result was)\b/i;
-  if (outcomeSignals.test(message) && decisions.length > 0) {
+  if (!testMode && outcomeSignals.test(message) && decisions.length > 0) {
     try {
       const decisionList = decisions.map((d) => `ID: ${d.id} | Decision: "${d.text_snapshot}"`).join("\n");
       const outcomeExtract = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -1698,8 +1706,8 @@ async function runPostProcessing(params: {
   // Detect complex ongoing scenarios and create/update situations.
   const situationSignals = /\b(situation|project|deal|partnership|negotiation|dispute|lawsuit|buying|selling|hiring|firing|moving|renovation|startup|launch|campaign|initiative)\b/i;
   const complexitySignals = message.length > 100 && (message.split(",").length > 2 || message.split(" and ").length > 2);
-  
-  if (situationSignals.test(message) && complexitySignals) {
+
+  if (!testMode && situationSignals.test(message) && complexitySignals) {
     try {
       const sitExtract = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -1768,7 +1776,7 @@ async function runPostProcessing(params: {
 
   // Detect situation resolution
   const resolveSignals = /\b(resolved|concluded|settled|sorted|wrapped up|closed the deal|finished|done with|behind me now)\b/i;
-  if (resolveSignals.test(message) && situations.length > 0) {
+  if (!testMode && resolveSignals.test(message) && situations.length > 0) {
     try {
       const resolveExtract = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -1863,6 +1871,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "No message" }), { status: 400, headers: corsHeaders });
     }
 
+    // ─── Test-mode flag (C78 — substrate-pollution shield) ───
+    // When the client sets `x-seven-test-mode: 1`, this turn's writes are
+    // tagged with metadata.test_mode=true and the extraction pipeline is
+    // skipped. Memory retrieval (match_memories RPC + recentMems query)
+    // excludes test_mode=true rows so normal turns never see test-turn data.
+    const testMode = req.headers.get("x-seven-test-mode") === "1";
+    if (testMode) {
+      console.log(`[TEST_MODE] Active for user ${user.id.slice(0, 8)} — extraction skipped, writes tagged`);
+    }
+
     // --- Thinking-trace accumulator (Architecture v5.7 sec.10.10.7) ---
     // Each context-fetch / governance / research / decision phase pushes a
     // step here. In the SSE streaming path these get flushed as `progress`
@@ -1935,7 +1953,9 @@ serve(async (req) => {
         section_id: convoId,
         role: "user",
         content: message,
-        metadata: metadata || null,
+        metadata: testMode
+          ? { ...(metadata || {}), test_mode: true }
+          : (metadata || null),
       })
       .select("created_at")
       .single();
@@ -1977,6 +1997,7 @@ serve(async (req) => {
         .from("memories_structured")
         .select("text, memory_type, importance, created_at")
         .eq("user_id", user.id)
+        .not("metadata->>test_mode", "eq", "true")
         .order("importance", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(20),
@@ -3266,6 +3287,7 @@ After this turn, the user will reply with approval ("yes", "go ahead", etc.) or 
               matchedPatternIds,
               situations,
               metadata: metadata || null,
+              testMode,
             });
 
             // Final event with metadata. Surfaces server-authoritative
@@ -3381,6 +3403,7 @@ After this turn, the user will reply with approval ("yes", "go ahead", etc.) or 
       matchedPatternIds,
       situations,
       metadata: metadata || null,
+      testMode,
     });
 
     // Server-authoritative timestamps surfaced for v5.7 §10.9 rule 5.
