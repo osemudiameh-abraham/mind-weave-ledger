@@ -651,6 +651,67 @@ are second-priority to the 3 ERROR-level RLS findings.
 
 ## Deferred tech-debt
 
+### C82 (candidate) — Gate 4a toggle is structurally broken in chat function
+
+**Discovered:** 2026-05-13 during Scenario 2 v76 verification gate-chain
+diagnosis.
+
+**Finding:** the §10.7.A 5-gate chain's toggle gate (Gate 4a, at
+`supabase/functions/chat/index.ts:2459-2465`) reads
+`identity?.proactive_surfacing_enabled !== false` from the `identity`
+object. But the identity-profiles SELECT at line 1972 **does NOT
+include `proactive_surfacing_enabled` in its column list** — the SELECT
+fetches only `display_name, self_role, self_company, self_city, goals,
+focus_areas`. So `identity.proactive_surfacing_enabled` is always
+`undefined`, and `undefined !== false` evaluates to `true` — **the
+gate always passes regardless of the user's actual setting**.
+
+**Impact:** PR-3's Settings toggle ("Bring up patterns before answering
+when relevant") has zero effect on the gate chain. A user who toggles
+the setting OFF still gets pattern surfacing (subject to the other
+gates). The toggle works as a UI element + database write but is
+disconnected from the surfacing decision.
+
+**Fix:** one-line addition to the identity_profiles SELECT at
+line 1972:
+```typescript
+.select("display_name, self_role, self_company, self_city, goals, focus_areas, proactive_surfacing_enabled")
+```
+Then Gate 4a will read the actual value.
+
+**Effort:** ~5 min implementation, but bundles with a chat function
+redeploy and re-verification. Defer until next chat function deploy
+cycle to avoid a one-line-change-only redeploy.
+
+**Action:** captured here for the next Stage 2A maintenance pass.
+Not blocking current Stage 2A PR-2b verification (which targets the
+gate-chain plumbing end-to-end, not the toggle's UX effect).
+
+### C83 — Embedding pre-filter calibration (applied 2026-05-13)
+
+**Discovered:** 2026-05-13 during Stage 2A PR-2b verification on v76.
+
+**Finding:** Gate 3a's embedding pre-filter floor of 0.4 was inherited
+from generic guidance; not empirically validated against
+text-embedding-3-large + long-description-vs-short-query pairs.
+Production observation via iter-2 instrumentation: legitimately-related
+patterns score 0.05-0.20 cosine. Both synthetic patterns scored
+0.066-0.079 against the trigger phrase "I'm thinking of pulling an
+all-nighter to finish this project tonight" despite clear semantic
+match — confirmed by `[PATTERN_RELEVANCE] preFiltered=0/2 top_sim=n/a
+all_sims=[0.079, 0.066]` log line from v76 chat function.
+
+**Fix applied:** Lowered floor 0.4 → 0.05 (`chat/index.ts:1100`).
+Pre-filter retained as cost guard. Top-3 cap intact for cost control
+at high N. Companion stale-comment sync at lines 1091, 1105, 2492.
+
+**Future watch:** If pattern count per user grows to 50+, revisit
+floor + cap empirically. Current calibration is for the N=2-20 range.
+Distribution of legitimate-related cosine values may differ at higher
+N or with different pattern description structures (shorter, more
+keyword-dense descriptions may score higher; statistics-heavy
+descriptions like Pattern A's pre-edit form may score lower).
+
 ### Pre-existing lint debt (logged 2026-05-12)
 
 `pnpm lint` exits 1 with 25 problems (8 errors + 17 warnings) across

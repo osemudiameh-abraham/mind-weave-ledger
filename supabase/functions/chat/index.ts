@@ -1088,7 +1088,7 @@ async function scorePatternRelevance(params: {
 
   // Step 1: embedding pre-filter. Embed each candidate description in
   // parallel; cosine similarity vs queryEmbedding; keep top-3 with
-  // sim ≥ 0.4 (wide pre-filter; LLM does precision per guard Q1).
+  // sim ≥ 0.05 (very wide pre-filter; LLM does precision per guard Q1).
   const embedded = await Promise.all(
     candidates.slice(0, 10).map(async (c) => {
       const emb = await embed(c.description, openaiKey);
@@ -1096,13 +1096,17 @@ async function scorePatternRelevance(params: {
       return { id: c.id, description: c.description, similarity: cosineSimilarity(queryEmbedding, emb) };
     }),
   );
+  // 2026-05-13: lowered from 0.4 → 0.05 after empirical observation that
+  // text-embedding-3-large returns 0.05-0.20 cosine for legitimately-related
+  // patterns (long description vs short query). Pre-filter retained as cost
+  // guard at high N; top-3 cap below provides sufficient bounding at low N.
   const preFiltered = embedded
-    .filter((c): c is NonNullable<typeof c> => c !== null && c.similarity >= 0.4)
+    .filter((c): c is NonNullable<typeof c> => c !== null && c.similarity >= 0.05)
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, 3);
 
   // Iter 2 (2026-05-10): always log preFilter outcome — diagnoses whether
-  // the embedding-similarity floor of 0.4 was the gate that closed.
+  // the embedding-similarity floor of 0.05 was the gate that closed.
   console.log(
     `[PATTERN_RELEVANCE] preFiltered=${preFiltered.length}/${candidates.length}` +
     ` top_sim=${preFiltered[0]?.similarity?.toFixed(3) ?? "n/a"}` +
@@ -2489,7 +2493,7 @@ STRICT EMISSION RULES -- ignore these and you produce noise:
 
       if (eligibleByCooldown.length > 0 && !dailyCapHit) {
         // Gate 3 — hybrid relevance scoring. Embedding pre-filter (top-3,
-        // sim ≥ 0.4) then gpt-4o-mini LLM evaluation. Per-turn cap of 1.
+        // sim ≥ 0.05) then gpt-4o-mini LLM evaluation. Per-turn cap of 1.
         const recentMessages = (history || []).slice(-3).map((m) => ({
           role: (m as { role?: string }).role ?? "user",
           content: (m as { content?: string }).content ?? "",
