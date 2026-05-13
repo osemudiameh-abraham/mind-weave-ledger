@@ -30,3 +30,6 @@ dist-ssr
 
 # Supabase local CLI state
 supabase/.temp/
+
+# Ad-hoc forensic / rollback snapshot files (per-session, not source of truth)
+.v*-snapshot.txt
