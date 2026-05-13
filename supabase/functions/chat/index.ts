@@ -1125,7 +1125,9 @@ async function scorePatternRelevance(params: {
     .map((c, i) => `${i + 1}. id="${c.id}" description="${c.description}"`)
     .join("\n");
 
-  const systemPrompt = `You evaluate behavioural patterns for relevance to a user's current message. For each candidate pattern, score 0.0-1.0 how directly the pattern applies to what the user just said. 1.0 = directly relevant; 0.7+ = clearly relevant; 0.4-0.7 = tangentially relevant; below 0.4 = not relevant. Return ONLY {"scores":[{"id":"<uuid>","score":<number>}, ...]}. No prose, no reasoning, no markdown.`;
+  // C84 (2026-05-13): "JSON" literal required by OpenAI response_format
+  // json_object mode — pre-flight 400 otherwise, even with JSON-shaped schema.
+  const systemPrompt = `You evaluate behavioural patterns for relevance to a user's current message. For each candidate pattern, score 0.0-1.0 how directly the pattern applies to what the user just said. 1.0 = directly relevant; 0.7+ = clearly relevant; 0.4-0.7 = tangentially relevant; below 0.4 = not relevant. Return ONLY a JSON object: {"scores":[{"id":"<uuid>","score":<number>}, ...]}. No prose, no reasoning, no markdown.`;
   const userPrompt = `User just said: "${message}"\n\nRecent conversation:\n${recentContext || "(no prior context)"}\n\nCandidate patterns (already pre-filtered for embedding similarity to current message):\n${candidateBlock}\n\nScore each pattern's direct relevance to what the user just said.`;
 
   const controller = new AbortController();
@@ -1150,7 +1152,12 @@ async function scorePatternRelevance(params: {
     clearTimeout(timer);
 
     if (!res.ok) {
-      console.error(`[PATTERN_RELEVANCE] OpenAI ${res.status} — fail closed`);
+      // C84 (2026-05-13): capture response body before fail-close so future
+      // 400/etc paths are self-diagnostic. Prior log swallowed the body.
+      const body = await res.text().catch(() => "(body read failed)");
+      console.error(
+        `[PATTERN_RELEVANCE] OpenAI ${res.status} ${res.statusText} — fail closed. body=${body.slice(0, 500)}`,
+      );
       return [];
     }
 

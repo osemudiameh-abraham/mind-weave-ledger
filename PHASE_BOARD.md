@@ -712,6 +712,40 @@ N or with different pattern description structures (shorter, more
 keyword-dense descriptions may score higher; statistics-heavy
 descriptions like Pattern A's pre-edit form may score lower).
 
+### C84 — OpenAI json_object mode + verbose error handlers (applied 2026-05-13)
+
+**Discovered:** 2026-05-13 during Stage 2A PR-2b verification on v77,
+after the C83 calibration unblocked Gate 3a (top_sim=0.503 passed the
+new floor). Dashboard log surfaced: `[PATTERN_RELEVANCE] OpenAI 400 —
+fail closed`. The response body was swallowed by the prior catch
+handler — required a diagnostic edit before the root cause was visible.
+
+**Two findings, both fixed in the same commit:**
+
+1. **OpenAI `response_format: { type: "json_object" }` mode requires
+   the literal word "json" (case-insensitive) somewhere in the
+   `messages` array.** Pre-flight 400 if absent — even with a valid
+   JSON-shaped response schema embedded in the prompt. Discovered when
+   v77's Gate 3b LLM scoring call at `chat/index.ts:1135` failed for
+   this reason despite the systemPrompt at line 1128 showing
+   `{"scores":[...]}` as the response schema without using the word
+   "JSON" elsewhere. Fix: added literal "JSON" to the systemPrompt
+   (`Return ONLY a JSON object: {...}`).
+
+2. **Silent error handlers swallow diagnostic information.** The
+   prior `[PATTERN_RELEVANCE] OpenAI ${status} — fail closed` log
+   line at `chat/index.ts:1153` didn't include statusText or response
+   body. Diagnosing required adding a one-edit diagnostic before
+   fixing the root cause. **Engineering rule:** any error path that
+   fail-closes on a non-2xx HTTP response MUST log the response body
+   (truncated to ~500 chars) alongside the status code. Future audits
+   of other OpenAI catch handlers in `chat/index.ts` (lines 493, 931,
+   1608, 1746, 1793, 1854) should apply the same pattern — out of
+   scope for this fix, banked for next maintenance pass.
+
+**Fix applied:** chat/index.ts:1128 (systemPrompt with JSON literal) +
+chat/index.ts:1152-1158 (error handler captures body).
+
 ### Pre-existing lint debt (logged 2026-05-12)
 
 `pnpm lint` exits 1 with 25 problems (8 errors + 17 warnings) across
