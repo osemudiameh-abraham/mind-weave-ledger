@@ -6,6 +6,97 @@ blocked. Update at session end as part of the SESSION_LOG handoff.
 
 ---
 
+## ARCHITECTURAL FINDINGS (most recent first)
+
+### 2026-05-13 — Pattern detection substrate-shape gap
+
+Stage 2A PR-2b verified the §10.7.A gate chain end-to-end against
+synthetic seeds (Pattern A `energy_depletion` + Pattern B
+`decision_reversal`). All gates fire, `:::pattern :::` callouts
+render, the `record_pattern_surfacing` RPC updates `surfacing_count`
++ writes `audit_log` atomically, cooldown filters repeat surfaces
+within 7 days. Stage 2A PR-2b is functionally sealed on chat function
+v78.
+
+**Post-verification forensics on the founder's real account revealed
+the pipeline has produced ZERO real patterns since inception — for
+any user, across all time.** `behaviour_patterns` is empty fleet-wide
+once synthetic seeds are removed.
+
+**Root cause is NOT scanner tuning or threshold calibration.**
+`cron-pattern-detection` correctly returns 0 patterns on the
+founder's 15-decision substrate because no pattern type's signal is
+actually present in the data the scanner reads:
+
+| Pattern type | Substrate signal in founder's account |
+|---|---|
+| `commitment_overload` | 15 decisions over 90+ days = 1.2/week, too sparse to indicate overload |
+| `financial_pressure` | Zero finance-related decisions |
+| `energy_depletion` | "All-nighter" content lives in `messages` and `memory_facts`; never reaches `decisions` |
+| `decision_reversal` | All real outcomes "worked"; only test rows have "didn't work" |
+| `communication_risk` | Zero communication decisions |
+| `relationship_neglect` | Opposite signal — pro-relationship decisions only |
+| `goal_drift` | "Skip ISO 27001" etc. are reasoned deferrals with explicit justification, not drift |
+| `cognitive_bias` | No clear bias loop in 15 mostly-positive decisions |
+
+**The architectural blind spot:** the founder's most distinctive
+recurring-intent behaviour ("I'm thinking of pulling an all-nighter"
+said 4 times in 2 days) is NEVER captured as a `decision` row because
+`chat/index.ts:1593` (`decisionSignals` regex) requires committed
+phrasing — `"I decided to..."`, `"I will..."`, `"I'm going to..."`.
+Hypothetical/rumination phrasing — `"I'm thinking of..."`,
+`"I might..."`, `"should I..."` — fails the gate. So the behaviour
+that Memori's thesis is built on ("you've attempted this 6 times, it
+failed 5 times") is structurally invisible to the pattern scanner
+because hypothetical-intent loops never become `decisions` to scan.
+
+This is the decision-side mirror of C79 (extraction asymmetry —
+hypotheticals over-claimed as facts, under-claimed as decisions). C79
+named the fact side; this finding names the decision side, and shows
+the combined effect: **the substrate the pattern scanner sees doesn't
+carry the patterns users actually have.**
+
+**Three forward paths, decision deferred to v5.8 architecture session:**
+
+- **(α) Repoint scanner at messages.** Modify `cron-pattern-detection`
+  to read `messages` + `memory_facts` alongside `decisions + outcomes`.
+  Cheap. **Rejected for v5.8 candidacy:** the 8 declared pattern types
+  are designed for the decisions-and-outcomes structure (intent →
+  result → reflection). Pointing them at raw messages produces noise
+  (every casual mention of "tonight" triggers `energy_depletion`
+  candidates).
+
+- **(β) Extend `decisionSignals` regex to capture hypotheticals as
+  low-confidence decisions.** `chat/index.ts:1593` grows to admit
+  "I'm thinking of...", "I might...", "should I...". Resulting
+  `decisions` rows tagged `confidence='low'` and
+  `source_type='hypothetical'`. Scanner then sees the recurring-intent
+  loop. Tractable in ~1 session. **Risk:** C79-class noise generation
+  into the `decisions` table; every musing becomes a decision-shaped
+  row. Could overwhelm the decisions UI on /memory.
+
+- **(γ) New `behavioural_signals` table + intermediate cron.** A new
+  layer reads `messages` over rolling windows, clusters by semantic
+  theme, and writes `behavioural_signals` rows ("founder mentioned
+  all-nighter intent 4× in 48h"). Pattern scanner then reads
+  `decisions + outcomes + behavioural_signals`. Architecturally
+  cleanest — keeps `decisions` for committed intent, separates
+  rumination signal into its own surface. Cost: ~2-3 sessions to
+  design + build + verify + ship.
+
+**Decision deferred until v5.8 architecture session.** The verified
+gate chain is correct and ships as Stage 2A core; the substrate-shape
+problem is the v5.8 priority. Until v5.8 lands, the pattern surfacing
+feature is structurally present but empirically silent on real users
+— ship-blocking for marketing claims of "pattern detection working,"
+not ship-blocking for the v5.7 baseline.
+
+**Cross-references:** C79 (extraction asymmetry, PHASE_BOARD §C79).
+C85 (LESSONS.md — synthetic-verification ≠ feature-works). Stage 2A
+PR-2b verification cycle 2026-05-13 chat function v78.
+
+---
+
 ## Current phase
 
 **Phase 0.C — Stage 2 (UI surfacing of substrate intelligence)**

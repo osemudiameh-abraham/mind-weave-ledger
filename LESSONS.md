@@ -518,3 +518,85 @@ C83 (same verification cycle, the immediately-prior blocker). C72
 observable rows ≠ success" principle).
 
 ---
+
+## C85 — Pipeline verification ≠ product working when the substrate doesn't carry the signal the consumer needs
+
+**Date:** 2026-05-13
+**Surface:** `supabase/functions/cron-pattern-detection/index.ts` +
+`supabase/functions/chat/index.ts:1593` (`decisionSignals` regex) +
+all downstream consumers of `behaviour_patterns`.
+**Context:** Stage 2A PR-2b sealed 2026-05-13 after a full
+verification cycle against synthetic seeds (Pattern A `energy_depletion`
++ Pattern B `decision_reversal`). The §10.7.A gate chain works
+end-to-end: gates fire, `:::pattern :::` callouts render,
+`record_pattern_surfacing` RPC updates `surfacing_count` and writes
+`audit_log` atomically, cooldown filters repeat surfaces within 7
+days. Post-seal forensics revealed **zero real patterns have ever
+existed for any user across all time** — including the founder despite
+15 decisions and ample chat activity over 90+ days.
+
+**Why it was easy to miss:** synthetic-seed verification gives a
+green checkmark on every structural test you can write — gates,
+callouts, audit, cooldown, persistence, RPC atomicity. The structural
+correctness is real. But the seeds bypass the substrate-to-detection
+step entirely: they're INSERTed directly into `behaviour_patterns` to
+test downstream gates, not produced by `cron-pattern-detection` from
+a real chat→decision→scanner path. Real users traverse:
+
+```
+chat input  →  decisionSignals regex  →  decisions row  →  cron scanner  →  pattern row
+              (chat/index.ts:1593)        (decisions table)   (cron-pattern-detection)
+```
+
+If the substrate at any step doesn't carry the behaviour shape the
+next step's classifier expects, the gate chain at the end has nothing
+to fire on. You only discover that AFTER the verification cycle that
+gave you a clean shipping signal.
+
+The deceptive thing is that synthetic-seed verification is *necessary* —
+without it, the structural correctness of the gate chain is unproven
+and the v5.8 architecture work below it has no foundation. It's just
+not *sufficient* for declaring the feature works for real users.
+
+**The discipline:** every verification cycle that uses synthetic
+seeds at any layer must be paired with a verification cycle on real
+production substrate BEFORE declaring the feature shippable.
+Synthetic verification proves the pipeline is correct;
+real-substrate verification proves the feature produces value. Both
+are required. One without the other = unknown state.
+
+Concretely for Memori's pattern-detection surface, every verification
+going forward must include:
+
+```sql
+SELECT
+  COUNT(*) FILTER (
+    WHERE trigger_conditions->>'_synthetic' IS DISTINCT FROM 'true'
+  ) AS real_patterns,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE trigger_conditions->>'_synthetic' IS DISTINCT FROM 'true'
+  ) AS users_with_real_patterns
+FROM public.behaviour_patterns;
+```
+
+**`real_patterns` must be > 0 for the feature to be considered
+working.** If it's 0, the feature is silent for real users regardless
+of how many synthetic tests pass.
+
+This generalises beyond pattern detection. Any feature where the path
+from user input → substrate → consumer involves an extraction step or
+classifier (decision detection, fact extraction, situation detection,
+outcome capture, identity model updates) needs the same real-substrate
+gate. Synthetic test at one end + verified consumer at the other end
+DOES NOT prove the middle is producing the right shape of substrate
+for the consumer.
+
+**Cross-reference:** C79 (extraction asymmetry — hypotheticals
+over-claimed as facts, under-claimed as decisions; the decision side
+is what hides recurring-intent patterns from the scanner). C82
+(UI-to-consumer disconnect — same family of "verified at endpoints,
+broken in middle" disease). PHASE_BOARD entry "2026-05-13 — Pattern
+detection substrate-shape gap" (same finding, with α/β/γ remediation
+paths). Stage 2A PR-2b verification cycle, chat function v78.
+
+---
