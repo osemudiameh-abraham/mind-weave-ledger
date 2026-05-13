@@ -271,3 +271,250 @@ When adding a new lesson:
 Append to the end. Never edit a previous lesson; supersede with a new one
 that names the prior C## explicitly.
 -->
+
+---
+
+## C76 — MCP `deploy_edge_function` rejects payloads above ~50K tokens; use Supabase CLI for large functions
+
+**Date:** 2026-05-10
+**Surface:** Stage 2A PR-2b iter-2 deploy of `supabase/functions/chat/index.ts`
+(3,573 lines / ~125 KB).
+**Context:** attempted `mcp__supabase__deploy_edge_function` to ship the
+iter-2 chat-gates code after editing the function. The tool rejected the
+payload — request body exceeded the MCP integration's per-call token
+ceiling (approximately 50K tokens at the time, varies by MCP version).
+
+**Why it was easy to miss:** the MCP tool's description doesn't surface
+a size limit. The first symptom is a generic protocol error after a
+slow upload, with no actionable hint that the function is "too large."
+Small functions (under ~1,500 lines) deploy fine, so the limit isn't
+visible during normal development.
+
+**The discipline:** for Edge Functions where source file exceeds ~2,500
+lines OR ~80KB on disk, default to the local CLI instead of the MCP
+tool:
+
+```bash
+supabase functions deploy <slug> --project-ref <project_ref>
+```
+
+The CLI reads from disk and uploads via the Supabase Functions REST API
+directly, which has a much higher (multi-MB) payload limit. Workflow
+requirements:
+
+1. Ensure all edits are SAVED to disk before invoking the CLI deploy.
+2. After deploy, verify via `mcp__supabase__list_edge_functions` that
+   the version incremented AND `ezbr_sha256` changed — the CLI's
+   "Deployed Functions" success message doesn't include the new hash.
+3. The CLI doesn't gate JWT-verify settings on redeploy — existing
+   `verify_jwt` is preserved.
+
+**Cross-reference:** CLAUDE.md §8 lists `deploy_edge_function` under
+tool boundaries with guard-review-on-dev / founder-approval-on-prod
+gating. C76 narrows that to: the MCP path itself only applies to
+sub-50K-token functions. For larger functions, the CLI is the only
+viable path even with guard approval. Used live on v74 (2026-05-10),
+v75 (2026-05-12), v76/v77/v78 (2026-05-13).
+
+---
+
+## C82 — UI toggle can be structurally disconnected from the consuming gate when the consumer's SELECT doesn't include the column
+
+**Date:** 2026-05-13
+**Surface:** `supabase/functions/chat/index.ts:1972` (identity_profiles
+SELECT) vs Stage 2A PR-3 `Settings.tsx` proactive-surfacing toggle.
+**Context:** PR-3 (2026-05-11) added a Settings UI toggle that writes
+`identity_profiles.proactive_surfacing_enabled`. The chat function's
+§10.7.A Gate 4a (line 2459-2465 post-merge) reads
+`identity?.proactive_surfacing_enabled !== false`. But the identity-
+profiles SELECT at line 1972 (pre-existing column list) does NOT
+include the new column. The JS object has `undefined` for that field;
+`undefined !== false` is `true`; the gate always passes regardless of
+the user's actual toggle setting.
+
+**Why it was easy to miss:** both halves of the feature ship "working":
+- UI side: toggle clicks save to DB ✓
+- Server side: chat function still references the property ✓ (in TS,
+  reading a missing key returns undefined, not a compile error)
+- No runtime error, no log, no failed test, no schema check.
+
+The disconnect is silent. The only way to catch it is to test the
+toggle's INTENDED EFFECT (does turning it OFF actually stop pattern
+surfacing?) — and Stage 2A's verification target was the gate-chain
+plumbing, not the toggle UX, so the disconnect went undiscovered until
+2026-05-13 forensic review of why a 0.05-floor sensitivity test still
+worked when "the toggle would have to be checked."
+
+**The discipline:** when a feature spans UI-write + server-side-read
+of a new column, the test plan must assert BOTH halves of the contract
+PLUS the connection between them:
+
+1. UI writes the column ✓
+2. The consumer (chat function, RPC, cron, etc.) SELECTs the column ✓
+3. **The toggle's intended effect is observable in consumer behaviour ✓**
+   ← the assertion that catches C82-class disconnects
+
+Schema-leads-query (C29/C63) extension: when adding a new column on
+table X, grep the entire codebase for ALL `.select(` calls against
+table X. Each consumer's SELECT must be audited for whether the new
+column needs to be included.
+
+```bash
+# extending columns on identity_profiles? audit all consumers:
+git grep -nE 'from\("identity_profiles"\)\.select' src/ supabase/
+```
+
+**Fix:** one-line addition to chat/index.ts:1972 — add
+`proactive_surfacing_enabled` to the SELECT column list. Deferred to
+next chat redeploy cycle (low priority; toggle is currently always-on
+which matches the default state).
+
+**Cross-reference:** C29/C63 (schema-leads-query). PR-3 (Settings
+toggle, 2026-05-11). PR-2b iter-2 (gate chain, 2026-05-10).
+
+---
+
+## C83 — Embedding-pre-filter floors must be calibrated against the actual model + text-shape distribution, not inherited from generic guidance
+
+**Date:** 2026-05-13
+**Surface:** `supabase/functions/chat/index.ts:1100` — Gate 3a embedding
+pre-filter floor in `scorePatternRelevance` for §10.7.A proactive
+surfacing.
+**Context:** initial calibration was `c.similarity >= 0.4` based on a
+mental model that text-embedding-3-large produces 0.4-0.7 cosine for
+related-content pairs. Empirical observation during Stage 2A PR-2b
+verification: legitimately-related pattern matches produced cosine
+0.05-0.20, not 0.4-0.7.
+
+Concretely: Pattern A's description (228 chars, ~45 tokens of mixed
+action + statistical commentary: "You attempt all-nighters...5 of 6
+attempts last quarter, single success came after a proper night's
+sleep") vs the trigger query (71 chars, ~13 tokens of forward-looking
+intent: "I'm thinking of pulling an all-nighter to finish this project
+tonight") produced cosine **0.066-0.079** — well below the 0.4 floor,
+despite clear semantic overlap. Both candidate patterns filtered before
+ever reaching the LLM relevance scorer.
+
+**Why it was easy to miss:** "0.4 cosine similarity floor" is a
+defensible-sounding number from generic embedding-search guidance
+(applied to typical query-vs-document retrieval where both are
+paragraph-length). But text-embedding-3-large's similarity distribution
+for **asymmetric length** pairs (short query, long description) is
+materially compressed:
+
+- Short-vs-short related: 0.4-0.7 (matches the inherited mental model)
+- Short-vs-long related: 0.05-0.20 (well below the floor)
+- Truly-unrelated: ~0.0
+
+The floor needs to match the actual length distribution of the data,
+not a generic "wide pre-filter" assumption.
+
+**The discipline:** before locking in any embedding-similarity
+threshold, sample representative `(query, candidate)` pairs across all
+expected length combinations and measure the distribution:
+
+```typescript
+// One-off calibration script: embed strong-match, weak-match, no-match
+// pairs and print cosines. Threshold = strong_match_low - 0.05 margin.
+const pairs = [
+  ["I might pull an all-nighter tonight", "<long pattern description about all-nighters>", "STRONG"],
+  ["I might pull an all-nighter tonight", "<short pattern description about all-nighters>", "STRONG"],
+  ["I might pull an all-nighter tonight", "<long pattern description about decision reversal>", "WEAK"],
+  ["I might pull an all-nighter tonight", "<unrelated pattern>", "NO-MATCH"],
+];
+// Compute and inspect before deploying any threshold.
+```
+
+For chat function v77's calibration: floor 0.05, with top-3 cap as the
+real cost guard. The LLM at Gate 3b (0.7 score threshold) is the
+authoritative precision gate; the pre-filter is just an N-bounded
+shortlist.
+
+**Cross-reference:** scorePatternRelevance at `chat/index.ts:1074`
+(2026-05-13 post-fix line numbers). PR-2b iter-2 (gate chain). C84
+(same verification cycle, next blocker once C83 cleared).
+
+---
+
+## C84 — OpenAI `response_format: { type: "json_object" }` requires the literal word "json" in messages, AND every non-2xx error handler must log the response body
+
+**Date:** 2026-05-13
+**Surface:** `supabase/functions/chat/index.ts:1130` (systemPrompt in
+scorePatternRelevance) + `chat/index.ts:1153` (error handler).
+**Context:** Stage 2A PR-2b verification on chat function v77 — Gate 3a
+passed after C83 calibration (`top_sim=0.503`), but Gate 3b's LLM
+scoring call returned HTTP 400 with the body swallowed by a minimal
+catch handler. Required a diagnostic deploy to surface the real cause.
+
+**Two findings bundled (both fixed in chat function v78):**
+
+### Finding 1 — OpenAI json_object literal-word requirement
+
+When `response_format: { type: "json_object" }` is set on
+`/v1/chat/completions`, OpenAI's API runs a pre-flight check: the
+`messages` array must contain the literal word "json" (case-insensitive)
+somewhere. If absent, the API returns HTTP 400 with body:
+
+```json
+{"error": {"message": "'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.", ...}}
+```
+
+A JSON-shaped response schema *embedded as syntax* in the prompt (e.g.
+`Return ONLY {"scores":[...]}`) does NOT satisfy the check — the literal
+substring "json" must appear in the text. The pre-flight runs BEFORE
+the model executes (so no token cost, no helpful 422 to distinguish from
+other 400s).
+
+**Easy to miss because** the prompt visually contains JSON syntax and
+the example schema, so a reviewer sees "the prompt clearly asks for
+JSON" without noticing the literal word is absent.
+
+**Fix:** include "JSON" as a literal word in either the system or user
+message. The hint that worked here: `Return ONLY a JSON object:
+{"scores":[{"id":"<uuid>","score":<number>}, ...]}`.
+
+### Finding 2 — Silent error handlers swallow diagnostic information
+
+The prior catch handler was minimal:
+
+```typescript
+if (!res.ok) {
+  console.error(`[PATTERN_RELEVANCE] OpenAI ${res.status} — fail closed`);
+  return [];
+}
+```
+
+This logs only the status code. The actual error message — which
+would have named "json missing" in two seconds — was discarded.
+Diagnosing the 400 required a separate diagnostic deploy to add the
+body-capture pattern before fail-close.
+
+**Discipline (engineering rule, fleet-wide):**
+
+ANY error path that fail-closes on a non-2xx HTTP response MUST log
+the response body (truncated to ~500 chars) alongside the status code:
+
+```typescript
+if (!res.ok) {
+  const body = await res.text().catch(() => "(body read failed)");
+  console.error(
+    `[NAME] OpenAI ${res.status} ${res.statusText} — fail closed. body=${body.slice(0, 500)}`,
+  );
+  return [];
+}
+```
+
+This pattern is already followed by 4 of 5 other OpenAI catch handlers
+in chat/index.ts (lines 511, 600, 954, 1009, 1380 in v78). The
+PATTERN_RELEVANCE handler was the outlier — likely copy-paste from a
+boilerplate without inheriting the body-capture from the surrounding
+handlers. Engineering rule: when introducing new fail-close handlers,
+audit the file's existing handlers for the established pattern and
+match it.
+
+**Cross-reference:** scorePatternRelevance at `chat/index.ts:1074`.
+C83 (same verification cycle, the immediately-prior blocker). C72
+(audit pattern for new scheduled functions, similar "absence of
+observable rows ≠ success" principle).
+
+---

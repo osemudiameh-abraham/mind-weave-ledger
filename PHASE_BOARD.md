@@ -370,6 +370,14 @@ trace, audit row) needs richer provenance: who generated it, in what
 mode, from what source phrasing, with what governance gate. The v5.8
 design session should treat these three as one design surface.
 
+**v5.8 design item — memory_traces test_mode propagation (banked
+2026-05-13):** memory_traces lacks a metadata column, so C78's
+test_mode flag cannot propagate to traces. C78's Q5 deferred this by
+design. v5.8 should either add a metadata column + thread test_mode
+through the chat function's memory_traces insert (line 1810), OR fold
+test_mode into strategy_history as a top-level key. Either path
+enables full-stack test-mode isolation.
+
 **Engineering implications for Stage 2A:**
 
 - Stage 2A PR-2b acceptance criteria unchanged — gate-chain isolation
