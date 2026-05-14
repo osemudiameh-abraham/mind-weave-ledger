@@ -786,6 +786,12 @@ cycle to avoid a one-line-change-only redeploy.
 Not blocking current Stage 2A PR-2b verification (which targets the
 gate-chain plumbing end-to-end, not the toggle's UX effect).
 
+> **FLAGGED 2026-05-14:** chat/index.ts:2148 post-iter-2 SELECT now
+> includes `proactive_surfacing_enabled` per grep. May be silently
+> resolved by PR #58 merge. Needs functional verification (toggle off
+> → trigger → expect no surface) before status change. Test scheduled
+> when synthetic seeds are restored OR a real pattern fires.
+
 ### C83 — Embedding pre-filter calibration (applied 2026-05-13)
 
 **Discovered:** 2026-05-13 during Stage 2A PR-2b verification on v76.

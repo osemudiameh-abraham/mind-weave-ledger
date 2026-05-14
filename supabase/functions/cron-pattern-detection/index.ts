@@ -171,7 +171,11 @@ Output as a JSON array. If no patterns are detected, return []. Return ONLY vali
           });
 
           if (!analysisRes.ok) {
-            console.error(`[PATTERN_CRON] GPT-4o error for user ${userId.slice(0, 8)}: ${analysisRes.status}`);
+            // C84 pattern: capture body before fail-close so future 400/etc are self-diagnostic.
+            const body = await analysisRes.text().catch(() => "(body read failed)");
+            console.error(
+              `[PATTERN_CRON] GPT-4o ${analysisRes.status} ${analysisRes.statusText} for user ${userId.slice(0, 8)} — fail closed. body=${body.slice(0, 500)}`,
+            );
             continue;
           }
 
@@ -190,12 +194,21 @@ Output as a JSON array. If no patterns are detected, return []. Return ONLY vali
 
           try {
             detectedPatterns = JSON.parse(cleanPatterns);
-          } catch {
-            console.error(`[PATTERN_CRON] JSON parse failed for user ${userId.slice(0, 8)}`);
+          } catch (parseErr) {
+            // C84 pattern: log the actual error + raw output that failed.
+            console.error(
+              `[PATTERN_CRON] JSON parse failed for user ${userId.slice(0, 8)} — err=${(parseErr as Error).message} raw=${cleanPatterns.slice(0, 500)}`,
+            );
             continue;
           }
 
-          if (!Array.isArray(detectedPatterns)) continue;
+          if (!Array.isArray(detectedPatterns)) {
+            // C84 pattern: log the type + preview when the LLM returns non-array.
+            console.error(
+              `[PATTERN_CRON] LLM returned non-array for user ${userId.slice(0, 8)} — type=${typeof detectedPatterns} preview=${JSON.stringify(detectedPatterns).slice(0, 200)}`,
+            );
+            continue;
+          }
 
           // Limit to 10 patterns, sorted by evidence count
           detectedPatterns.sort((a, b) => (b.evidence_count || 0) - (a.evidence_count || 0));
@@ -205,7 +218,13 @@ Output as a JSON array. If no patterns are detected, return []. Return ONLY vali
 
           // Upsert detected patterns
           for (const pattern of detectedPatterns) {
-            if (!pattern.pattern_type || !pattern.description) continue;
+            if (!pattern.pattern_type || !pattern.description) {
+              // C84 pattern: log skipped malformed pattern with shape preview.
+              console.warn(
+                `[PATTERN_CRON] Skipping malformed pattern for user ${userId.slice(0, 8)} — missing pattern_type or description. raw=${JSON.stringify(pattern).slice(0, 200)}`,
+              );
+              continue;
+            }
 
             // Check for existing pattern of same type
             const { data: existing } = await supabase
@@ -235,7 +254,9 @@ Output as a JSON array. If no patterns are detected, return []. Return ONLY vali
                 pattern_type: pattern.pattern_type,
                 description: pattern.description,
                 evidence_count: pattern.evidence_count || 1,
-                confidence: 0.6,
+                // 2026-05-14: aligned to chat function Gate 2 floor (0.65) + 0.05 margin.
+                // Long-term v5.8 fix: have GPT-4o return a calibrated confidence in its output.
+                confidence: 0.7,
                 trigger_conditions: pattern.trigger_conditions || {},
                 severity: pattern.severity || "medium",
                 recommendation: pattern.recommendation || null,
@@ -249,24 +270,45 @@ Output as a JSON array. If no patterns are detected, return []. Return ONLY vali
             patternsDetected++;
           }
 
-          // Retire patterns not seen in this scan (after 3 misses)
-          // Get all active patterns for this user that weren't in this scan
-          const { data: stalePatterns } = await supabase
+          // ─── Retire patterns not seen in 3 consecutive scans (Architecture §3.8) ───
+          // Replaces the prior 1-miss retire (code-comment-admitted deviation from spec).
+          // Uses the consecutive_miss_count column (migration 20260514100000) as the
+          // counter. Reset on detection, increment on miss, retire when >= 3.
+          //
+          // Note: this logic does NOT reactivate a previously-retired
+          // (is_active=false) pattern that's redetected. Such a pattern stays
+          // retired; the scanner would create a new row with a new id (the
+          // upsert lookup at line ~211 has eq("is_active", true) so retired
+          // patterns are invisible to the type-match check). Deliberate — keeps
+          // history of "we tried to warn the user, they dismissed/ignored,
+          // pattern reasserts" visible as distinct rows for future analysis.
+          // Revisit in v5.8 if user feedback indicates this creates dupes.
+          const { data: allActive } = await supabase
             .from("behaviour_patterns")
-            .select("id, scan_id")
+            .select("id, pattern_type, consecutive_miss_count")
             .eq("user_id", userId)
-            .eq("is_active", true)
-            .neq("scan_id", scanId);
+            .eq("is_active", true);
 
-          if (stalePatterns) {
-            for (const stale of stalePatterns) {
-              // If the scan_id is more than 2 scans old, retire it
-              // Simple approach: if it wasn't updated in this scan, mark inactive
-              // (A production system would track scan count per pattern)
-              await supabase.from("behaviour_patterns").update({
-                is_active: false,
-              }).eq("id", stale.id);
-              patternsRetired++;
+          if (allActive) {
+            for (const p of allActive) {
+              if (detectedTypes.has(p.pattern_type)) {
+                // Detected this scan — reset miss count if non-zero.
+                if ((p.consecutive_miss_count || 0) > 0) {
+                  await supabase.from("behaviour_patterns")
+                    .update({ consecutive_miss_count: 0 })
+                    .eq("id", p.id);
+                }
+              } else {
+                // Missed this scan — increment counter, retire if reaches 3.
+                const newCount = (p.consecutive_miss_count || 0) + 1;
+                await supabase.from("behaviour_patterns")
+                  .update({
+                    consecutive_miss_count: newCount,
+                    is_active: newCount < 3,
+                  })
+                  .eq("id", p.id);
+                if (newCount >= 3) patternsRetired++;
+              }
             }
           }
 
@@ -274,7 +316,10 @@ Output as a JSON array. If no patterns are detected, return []. Return ONLY vali
           console.log(`[PATTERN_CRON] User ${userId.slice(0, 8)}: ${detectedPatterns.length} patterns detected`);
 
         } catch (userErr) {
-          console.error(`[PATTERN_CRON] Error processing user ${userId.slice(0, 8)}:`, userErr);
+          // Capture both message + stack so the failing step is diagnosable from logs alone.
+          console.error(
+            `[PATTERN_CRON] Error processing user ${userId.slice(0, 8)}: ${(userErr as Error).message}\n${(userErr as Error).stack?.slice(0, 500) || "(no stack)"}`,
+          );
         }
       }
     }
