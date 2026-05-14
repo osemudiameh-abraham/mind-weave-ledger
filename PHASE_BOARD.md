@@ -8,6 +8,40 @@ blocked. Update at session end as part of the SESSION_LOG handoff.
 
 ## ARCHITECTURAL FINDINGS (most recent first)
 
+### 2026-05-14 — verify_jwt CLI default regression
+
+Supabase CLI's `functions deploy` command defaults to
+`verify_jwt = true` regardless of the function's prior deployed state.
+Functions using header-based auth (CRON_SECRET, custom apikey)
+silently regress to platform-JWT-required mode on redeploy unless
+EITHER the `--no-verify-jwt` flag is passed OR `supabase/config.toml`
+has `[functions.<name>]` `verify_jwt = false`.
+
+Discovered 2026-05-14 during cron-pattern-detection v20→v21 redeploy
+in the v5.8 substrate-shape design session. Caught by post-deploy
+snapshot diff (pattern established in the v74-v78 chain) BEFORE any
+pg_cron invocation could hit the regressed state — exactly what the
+snapshot discipline is designed to surface.
+
+**Fix applied:**
+
+- **Path A (immediate):** re-deploy with `--no-verify-jwt` flag → v22
+  with verify_jwt restored to false. ezbr_sha256 unchanged (only
+  metadata flag differs).
+- **Path B (durable):** config.toml entries added for
+  cron-pattern-detection and reminders-fire. Existing `notify` entry
+  was already correct.
+
+**Generalisation:** any time a CLI tool has a default value for a
+non-default platform setting, redeploying without the explicit
+override silently regresses. Catch via pre/post snapshot diff on
+EVERY deploy.
+
+Bank as **C86** in LESSONS.md at next session-end cleanup alongside
+C82/C83/C84/C85.
+
+---
+
 ### 2026-05-13 — Pattern detection substrate-shape gap
 
 Stage 2A PR-2b verified the §10.7.A gate chain end-to-end against

@@ -34,3 +34,24 @@
 
 [functions.notify]
 verify_jwt = false
+
+# Added 2026-05-14 (verify_jwt CLI default regression — see PHASE_BOARD
+# "2026-05-14 — verify_jwt CLI default regression" entry).
+# NOTE: reminders-fire was already referenced in the existing
+# config.toml header comment (7 May 2026) but the [functions.reminders-fire]
+# entry itself was never added. This closes that gap.
+# reminders-fire is invoked by pg_cron via net.http_post on every minute
+# tick. The caller doesn't send a user JWT; the function validates via
+# CRON_SECRET header (reminders-fire/index.ts auth check). Without this
+# config.toml entry, future CLI redeploys would default verify_jwt to
+# true and silently break the cron path.
+[functions.reminders-fire]
+verify_jwt = false
+
+# cron-pattern-detection same pattern as reminders-fire: invoked by
+# pg_cron (currently unscheduled — see Stage 2A PR-5), validates via
+# CRON_SECRET header (cron-pattern-detection/index.ts:31-37). Today's
+# v20→v21 redeploy silently regressed verify_jwt to true; Path A
+# (v22 with --no-verify-jwt flag) restored it, this entry locks it.
+[functions.cron-pattern-detection]
+verify_jwt = false
